@@ -1,7 +1,7 @@
 import asyncio
+from urllib.parse import quote_plus
 import httpx
 from fastapi import APIRouter, Request, Response, status
-from urllib.parse import quote_plus
 
 from .settings import settings
 from .logging import get_logger
@@ -10,6 +10,7 @@ from ..agents.noor_agent import run_noor_turn
 router = APIRouter()
 log = get_logger("wa")
 
+
 def _green_api_url():
     if not (settings.wa_green_id_instance and settings.wa_green_api_token):
         return None
@@ -17,6 +18,7 @@ def _green_api_url():
         f"https://7105.api.greenapi.com/waInstance{quote_plus(settings.wa_green_id_instance)}"
         f"/sendMessage/{quote_plus(settings.wa_green_api_token)}"
     )
+
 
 async def _send_whatsapp(chat_id: str, text: str):
     try:
@@ -29,6 +31,7 @@ async def _send_whatsapp(chat_id: str, text: str):
             log.info("WA send", extra={"status": r.status_code})
     except Exception as exc:
         log.exception("WA send failed", exc_info=exc)
+
 
 @router.post("/wa")
 async def receive_wa(request: Request):
