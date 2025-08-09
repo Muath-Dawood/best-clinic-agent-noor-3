@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+.env
+.DS_Store
+.pytest_cache/
+*.pyc
+initialize_folder_and_file_structure.py
