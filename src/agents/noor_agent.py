@@ -14,7 +14,7 @@ if _vector_store_id:
 noor = Agent(
     name="Noor",
     instructions=SYSTEM_PROMPT,
-    model="gpt-4o-mini",
+    model="gpt-4o",
     tools=tools,
     model_settings=ModelSettings(temperature=0.3),
 )
