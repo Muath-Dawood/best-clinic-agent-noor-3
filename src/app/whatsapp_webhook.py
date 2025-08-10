@@ -71,29 +71,19 @@ async def receive_wa(request: Request) -> Response:
     if ctx.patient_data is None:
         patient = await fetch_patient_data_from_whatsapp_id(sender_id)
         if patient:
-            ctx.patient_data = patient.get("details")
-            ctx.previous_appointments = patient.get("appointments", {}).get("data", [])
-
-            # prefer name from patient record over WhatsApp display name
-            name = (
-                ctx.patient_data.get("name")
-                or ctx.patient_data.get("full_name")
-                or " ".join(
-                    x
-                    for x in [
-                        ctx.patient_data.get("first_name"),
-                        ctx.patient_data.get("last_name"),
-                    ]
-                    if x
-                ).strip()
+            details = patient.get("details") or {}
+            ctx.patient_data = details
+            ctx.previous_appointments = (patient.get("appointments") or {}).get(
+                "data", []
             )
-            if name:
-                ctx.user_name = name
 
-                # TEMP: debug log (remove after test)
-                print("[lookup] FOUND:", ctx.user_phone, "→", ctx.user_name)
-            else:
-                print("[lookup] NOT FOUND:", ctx.user_phone)
+            # ✅ pick the exact field your API returns
+            if not ctx.user_name and isinstance(details.get("name"), str):
+                ctx.user_name = details["name"].strip()
+
+            print("[lookup] FOUND:", ctx.user_phone, "→", ctx.user_name or "<no name>")
+        else:
+            print("[lookup] NOT FOUND:", ctx.user_phone)
     # --- Run Noor with session + context ---
     try:
         reply = await run_noor_turn(user_input=text_in, ctx=ctx, session=session)

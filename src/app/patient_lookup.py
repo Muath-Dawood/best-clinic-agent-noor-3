@@ -25,7 +25,7 @@ BOOKING_API_TOKEN = os.getenv("BOOKING_API_TOKEN") or ""
 async def _lookup_old_api(phone: str) -> Optional[Dict[str, Any]]:
     """
     Calls https://<BEST_CLINIC_API_BASE>/api-ai-get-customer-details
-    with the same query params your old tool used.
+    and normalizes to {"details": {...}, "appointments": {"data": []}}
     """
     url = f"{BEST_CLINIC_API_BASE}{BEST_CLINIC_API_PATH}"
     params = {
@@ -42,12 +42,17 @@ async def _lookup_old_api(phone: str) -> Optional[Dict[str, Any]]:
         r.raise_for_status()
         payload = r.json()
 
-    # Expected: {"status": true/false, "data": {...}}
-    if isinstance(payload, dict) and payload.get("status") is True:
-        details = payload.get("data") or {}
-        # Normalize to a stable shape
-        return {"details": details, "appointments": {"data": []}}
-    return None
+    # Expect: {"status": true, "data": {"details": {...}}}
+    if not (isinstance(payload, dict) and payload.get("status") is True):
+        return None
+
+    data = payload.get("data") or {}
+    details = data.get("details") or {}
+    if not isinstance(details, dict):
+        return None
+
+    # Old endpoint doesn't return appointments; keep a stable shape
+    return {"details": details, "appointments": {"data": []}}
 
 
 async def _lookup_new_api(phone: str) -> Optional[Dict[str, Any]]:
