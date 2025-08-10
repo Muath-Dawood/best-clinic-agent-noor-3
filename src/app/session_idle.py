@@ -33,21 +33,9 @@ async def update_last_seen(user_id: str) -> None:
 
 
 async def _check_and_finalize(user_id: str) -> None:
-    """
-    Waits IDLE_SECONDS; if user still idle, summarize, save to vector store, and clear state.
-    """
     try:
-        # capture the timestamp when we started watching
-        async with _lock:
-            started_at = _last_seen.get(user_id, 0.0)
-
+        # simple sleep; we reset by cancelling this task on every new message
         await asyncio.sleep(IDLE_SECONDS)
-
-        async with _lock:
-            # if changed, user sent something; abort
-            if _last_seen.get(user_id, 0.0) != started_at:
-                logger.info(f"idle: aborted (activity) for {user_id}")
-                return
 
         # pull current state
         state: Optional[Tuple[BookingContext, SQLiteSession]] = get_state(user_id)
@@ -56,8 +44,8 @@ async def _check_and_finalize(user_id: str) -> None:
             return
 
         ctx, session = state
+
         logger.info(f"idle: building summary for {user_id}")
-        # build summary text
         try:
             summary = await build_summary(
                 user_id=user_id,
@@ -69,7 +57,6 @@ async def _check_and_finalize(user_id: str) -> None:
             logger.error(f"idle: build_summary failed for {user_id}: {e}")
             summary = None
 
-        # save to vector store if configured
         try:
             vsid = _vector_store_id()
             if vsid and summary:
@@ -82,30 +69,36 @@ async def _check_and_finalize(user_id: str) -> None:
                     f"idle: skip upload (vsid={vsid}, has_summary={bool(summary)}) for {user_id}"
                 )
         except Exception as e:
-            # non‑fatal
             logger.error(f"idle: upload failed for {user_id}: {e}")
-            pass
 
-        # clear session/context
         try:
             await clear_state(user_id)
             logger.info(f"idle: state cleared for {user_id}")
         except Exception as e:
             logger.error(f"idle: clear_state error for {user_id}: {e}")
-            pass
+
+    except asyncio.CancelledError:
+        # expected on every new message (we reset the timer)
+        logger.info(f"idle: watcher cancelled/reset for {user_id}")
+        return
     finally:
-        # allow a new watcher to be scheduled later
+        # only remove if *this* task is the one stored
         async with _lock:
-            _running_watchers.pop(user_id, None)
+            if _running_watchers.get(user_id) is asyncio.current_task():
+                _running_watchers.pop(user_id, None)
 
 
 async def schedule_idle_watch(user_id: str) -> None:
     """
-    Ensure exactly one background watcher is running for this user.
+    Reset the idle timer: cancel any existing watcher and start a fresh one.
+    This guarantees the summary runs IDLE_SECONDS after the *last* message.
     """
     async with _lock:
-        if user_id in _running_watchers:
-            return
+        # cancel previous watcher if still running
+        existing = _running_watchers.get(user_id)
+        if existing and not existing.done():
+            existing.cancel()
+        # start a fresh watcher
         task = asyncio.create_task(_check_and_finalize(user_id))
         _running_watchers[user_id] = task
-    logger.info(f"idle: watcher scheduled for {user_id} ({IDLE_SECONDS}s)")
+    logger.info(f"idle: timer reset for {user_id} ({IDLE_SECONDS}s)")
