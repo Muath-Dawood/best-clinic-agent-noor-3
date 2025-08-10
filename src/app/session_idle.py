@@ -19,7 +19,7 @@ _lock = asyncio.Lock()
 
 
 def _vector_store_id() -> Optional[str]:
-    v = os.getenv("VECTOR_STORE_ID", "").strip()
+    v = os.getenv("VECTOR_STORE_ID_SUMMARIES", "").strip()
     return v or None
 
 
