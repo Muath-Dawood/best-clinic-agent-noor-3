@@ -1,14 +1,16 @@
-from src.app.context_models import BookingContext
 from agents import Agent, Runner, SQLiteSession
-from .prompts.system_prompt_noor import SYSTEM_PROMPT
+from src.my_agents.prompts.system_prompt_noor import SYSTEM_PROMPT
+from src.tools.file_search import build_file_search_tool
+from src.app.context_models import BookingContext
 
-# from src.tools import get_all_tools  # if you already register tools
+# Build the retrieval tool if VECTOR_STORE_ID is set
+_tools = [t for t in [build_file_search_tool()] if t]
 
 noor = Agent(
     name="Noor",
     instructions=SYSTEM_PROMPT,
     model="gpt-4o",
-    # tools=get_all_tools(),  # keep or add later
+    tools=_tools,
 )
 
 
@@ -18,7 +20,7 @@ async def run_noor_turn(
     result = await Runner.run(
         starting_agent=noor,
         input=user_input,
-        session=session,  # ← chat history
-        context=ctx,  # ← your per-user state
+        session=session,  # keeps chat history
+        context=ctx,  # passes enriched context
     )
     return result.final_output

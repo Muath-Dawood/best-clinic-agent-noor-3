@@ -1,8 +1,9 @@
+# src/app/whatsapp_webhook.py
 from __future__ import annotations
 import asyncio
 import os
 import httpx
-from fastapi import FastAPI, Request, Response, status
+from fastapi import APIRouter, Request, Response, status
 from agents import SQLiteSession
 
 from src.app.context_models import BookingContext
@@ -10,8 +11,10 @@ from src.app.state_manager import get_state, touch_state
 from src.app.parse_phone_number import parse_whatsapp_to_local_palestinian_number
 from src.app.patient_lookup import fetch_patient_data_from_whatsapp_id
 from src.my_agents.noor_agent import run_noor_turn
+from src.app.session_idle import update_last_seen, schedule_idle_watch
 
-app = FastAPI()
+# Export a router (main.py mounts it at prefix="/webhook")
+router = APIRouter()
 
 GREEN_ID = os.getenv("WA_GREEN_ID_INSTANCE", "").strip()
 GREEN_TOKEN = os.getenv("WA_GREEN_API_TOKEN", "").strip()
@@ -32,7 +35,7 @@ def fire_and_forget_send(chat_id: str, text: str) -> None:
     asyncio.create_task(_send_whatsapp(chat_id, text))
 
 
-@app.post("/webhook/wa")
+@router.post("/wa")
 async def receive_wa(request: Request) -> Response:
     try:
         body = await request.json()
@@ -80,5 +83,9 @@ async def receive_wa(request: Request) -> Response:
     # Persist state and send reply
     touch_state(sender_id, ctx, session)
     fire_and_forget_send(sender_id, reply)
+
+    # ---- idle summarization hooks ----
+    await update_last_seen(sender_id)
+    await schedule_idle_watch(sender_id)
 
     return Response(content='{"status":"ok"}', media_type="application/json")
