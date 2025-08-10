@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from agents import Agent, Runner, ModelSettings, SQLiteSession
 from ..app.context_models import BookingContext
 from ..tools import get_all_tools
+from .prompts.system_prompt_noor import SYSTEM_PROMPT
 
 load_dotenv()
 
@@ -12,16 +13,7 @@ USER_SUMMARIES_ID = "vs_6897cd964ef881918fb69a90dccd18a2"
 
 noor_agent = Agent(
     name="Noor",
-    instructions=(
-        open(
-            os.path.join(os.path.dirname(__file__), "prompts/system_prompt_noor.py"),
-            encoding="utf-8",
-        ).read()
-        if os.path.exists(
-            os.path.join(os.path.dirname(__file__), "prompts/system_prompt_noor.py")
-        )
-        else ""
-    ),
+    instructions=SYSTEM_PROMPT,
     tools=get_all_tools(),
     model="gpt-4o",
     model_settings=ModelSettings(temperature=0.3),

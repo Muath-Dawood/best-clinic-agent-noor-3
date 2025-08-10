@@ -5,11 +5,10 @@ from fastapi import APIRouter, Request, Response, status
 
 from .settings import settings
 from .logging import get_logger
-from .state_manager import get_state, touch_state
+from .state_manager import get_state, touch_state, finalize_idle_sessions
 from .context_models import BookingContext
 from ..agents.noor_agent import run_noor_turn
 from .patient_lookup import fetch_patient_data_from_whatsapp_id
-from .middleware import SecurityHeaders
 from .errors import user_friendly_message
 from .parse_phone_number import parse_whatsapp_to_local_palestinian_number
 
@@ -93,3 +92,11 @@ async def receive_wa(request: Request):
     asyncio.create_task(_send_whatsapp(sender_id, reply))
 
     return Response(content='{"status":"ok"}', media_type="application/json")
+
+
+# Optionally: call finalize_idle_sessions periodically or on shutdown
+@router.on_event("shutdown")
+async def cleanup_idle_sessions():
+    await finalize_idle_sessions(
+        user_summaries_vs_id="vs_6897cd964ef881918fb69a90dccd18a2"
+    )
