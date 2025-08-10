@@ -5,7 +5,13 @@ from fastapi import APIRouter, Request, Response, status
 
 from .settings import settings
 from .logging import get_logger
+from .state_manager import get_state, touch_state
+from .context_models import BookingContext
 from ..agents.noor_agent import run_noor_turn
+from .patient_lookup import fetch_patient_data_from_whatsapp_id
+from .middleware import SecurityHeaders
+from .errors import user_friendly_message
+from .parse_phone_number import parse_whatsapp_to_local_palestinian_number
 
 router = APIRouter()
 log = get_logger("wa")
@@ -40,7 +46,6 @@ async def receive_wa(request: Request):
     except Exception:
         return Response(status_code=status.HTTP_400_BAD_REQUEST)
 
-    # Only handle text messages; Green-API sample structure
     try:
         sender_id = payload["senderData"]["chatId"]
         text_in = payload["messageData"]["textMessageData"]["textMessage"]
@@ -49,10 +54,42 @@ async def receive_wa(request: Request):
 
     log.info("incoming", extra={"sender": sender_id, "text": text_in})
 
-    # One LLM turn
-    reply = await run_noor_turn(user_input=text_in)
+    # Load or create state
+    cached = get_state(sender_id)
+    if cached:
+        ctx, session = cached
+    else:
+        ctx = BookingContext()
+        session = SQLiteSession(sender_id, "noor_sessions.db")
 
-    # fire-and-forget send
+    # Enrich context if missing
+    if not ctx.user_phone:
+        try:
+            ctx.user_phone = parse_whatsapp_to_local_palestinian_number(sender_id)
+        except ValueError:
+            pass
+    if not ctx.user_name:
+        ctx.user_name = payload["senderData"].get("senderName")
+    if ctx.patient_data is None:
+        try:
+            patient = await fetch_patient_data_from_whatsapp_id(sender_id)
+            if patient:
+                ctx.patient_data = patient.get("details")
+                ctx.previous_appointments = patient.get("appointments", {}).get(
+                    "data", []
+                )
+        except Exception as exc:
+            log.warning("patient_lookup_failed", extra={"err": str(exc)})
+
+    # Run agent
+    try:
+        reply = await run_noor_turn(user_input=text_in, context=ctx, session=session)
+    except Exception as exc:
+        log.exception("agent_failed")
+        reply = user_friendly_message(exc)
+
+    # Save state & send reply
+    touch_state(sender_id, ctx, session)
     asyncio.create_task(_send_whatsapp(sender_id, reply))
 
     return Response(content='{"status":"ok"}', media_type="application/json")
