@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from dotenv import load_dotenv
 
 # middleware
 from src.app.middleware import SecurityHeaders
@@ -6,6 +7,8 @@ from src.app.middleware import SecurityHeaders
 # routers
 from src.app.health import router as health_router
 from src.app.whatsapp_webhook import router as wa_router
+
+load_dotenv()
 
 app = FastAPI(title="Noor Agent")
 

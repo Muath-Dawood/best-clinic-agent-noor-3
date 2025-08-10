@@ -2,14 +2,11 @@ from __future__ import annotations
 import os
 import asyncio
 from typing import Dict, Optional, Tuple
-from dotenv import load_dotenv
 from agents import SQLiteSession
 
 from src.app.session_memory import build_summary, save_summary_to_vector_store
 from src.app.state_manager import get_state, clear_state
 from src.app.context_models import BookingContext
-
-load_dotenv()
 
 # 30 minutes
 IDLE_SECONDS = 30 * 60

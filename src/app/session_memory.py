@@ -48,6 +48,48 @@ def _guess_language(items: List[dict]) -> str:
     return "unknown"
 
 
+def _extract_times(items: List[dict], tz) -> tuple[datetime, datetime]:
+    """
+    Find earliest & latest timestamps in session items.
+    Looks for common keys and falls back to 'now' if none found.
+    """
+
+    def _parse_dt(v):
+        # epoch seconds
+        if isinstance(v, (int, float)):
+            try:
+                return datetime.fromtimestamp(float(v))
+            except Exception:
+                return None
+        # ISO 8601 strings (handle 'Z')
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except Exception:
+                return None
+        return None
+
+    collected = []
+    for it in items:
+        for key in ("created_at", "timestamp", "time", "ts"):
+            dt = _parse_dt(it.get(key))
+            if dt:
+                # normalize to your tz
+                if dt.tzinfo is None:
+                    try:
+                        dt = tz.localize(dt)  # pytz-aware
+                    except Exception:
+                        dt = dt.replace(tzinfo=tz)  # last resort
+                else:
+                    dt = dt.astimezone(tz)
+                collected.append(dt)
+
+    now = datetime.now(tz)
+    if not collected:
+        return now, now
+    return min(collected), max(collected)
+
+
 async def build_summary(
     *,
     user_id: str,
@@ -88,9 +130,9 @@ async def build_summary(
     s.user_name = user_name
     s.user_phone = user_phone
     s.language = lang
-    now = datetime.now(tz).isoformat()
-    s.start_time_iso = now
-    s.end_time_iso = now
+    start_dt, end_dt = _extract_times(items, tz)
+    s.start_time_iso = start_dt.isoformat()
+    s.end_time_iso = end_dt.isoformat()
     return s
 
 

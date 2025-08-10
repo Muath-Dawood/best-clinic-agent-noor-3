@@ -3,11 +3,8 @@ from __future__ import annotations
 import os
 from typing import Optional, Dict, Any
 import httpx
-from dotenv import load_dotenv
 
 from src.app.parse_phone_number import parse_whatsapp_to_local_palestinian_number
-
-load_dotenv()
 
 # --- Old tool-style API (preferred) ---
 BEST_CLINIC_API_BASE = (

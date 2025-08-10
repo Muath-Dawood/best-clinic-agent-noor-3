@@ -12,6 +12,7 @@ from src.app.parse_phone_number import parse_whatsapp_to_local_palestinian_numbe
 from src.app.patient_lookup import fetch_patient_data_from_whatsapp_id
 from src.my_agents.noor_agent import run_noor_turn
 from src.app.session_idle import update_last_seen, schedule_idle_watch
+from src.app.logging import get_logger
 
 # Export a router (main.py mounts it at prefix="/webhook")
 router = APIRouter()
@@ -22,13 +23,18 @@ GREEN_URL = (
     f"https://7105.api.greenapi.com/waInstance{GREEN_ID}/sendMessage/{GREEN_TOKEN}"
 )
 
+logger = get_logger("noor.webhook")
+
 
 async def _send_whatsapp(chat_id: str, text: str) -> None:
+    if not (GREEN_ID and GREEN_TOKEN):
+        logger.warning("Skipping WhatsApp send: WA env not configured")
+        return
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(GREEN_URL, json={"chatId": chat_id, "message": text})
-    except Exception:
-        pass  # swallow send errors
+    except Exception as e:
+        logger.error(f"WhatsApp send failed: {e}")
 
 
 def fire_and_forget_send(chat_id: str, text: str) -> None:
@@ -87,14 +93,16 @@ async def receive_wa(request: Request) -> Response:
                 if isinstance(wa_display_name, str) and wa_display_name.strip():
                     ctx.user_name = wa_display_name.strip()
 
-            print("[lookup] FOUND:", ctx.user_phone, "→", ctx.user_name or "<no name>")
+            logger.info(
+                f"[lookup] FOUND: {ctx.user_phone} → {ctx.user_name or '<no name>'}"
+            )
         else:
             # optional: fallback to WhatsApp sender name when no DB record
             if not ctx.user_name:
                 wa_display_name = body.get("senderData", {}).get("senderName")
                 if isinstance(wa_display_name, str) and wa_display_name.strip():
                     ctx.user_name = wa_display_name.strip()
-            print("[lookup] NOT FOUND:", ctx.user_phone)
+            logger.info(f"[lookup] NOT FOUND: {ctx.user_phone}")
     # --- Run Noor with session + context ---
     try:
         reply = await run_noor_turn(user_input=text_in, ctx=ctx, session=session)

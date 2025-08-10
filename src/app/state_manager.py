@@ -19,4 +19,7 @@ async def clear_state(user_id: str) -> None:
     pair = _STATE.pop(user_id, None)
     if pair:
         _, sess = pair
-        await sess.close()
+        try:
+            await sess.close()
+        except Exception:
+            pass
