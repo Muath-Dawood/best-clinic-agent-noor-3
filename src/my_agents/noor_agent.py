@@ -14,13 +14,33 @@ noor = Agent(
 )
 
 
+def _context_preamble(ctx: BookingContext) -> str:
+    if not ctx:
+        return ""
+    parts = []
+    if ctx.user_name:
+        parts.append(f"user_name={ctx.user_name}")
+    if ctx.user_phone:
+        parts.append(f"user_phone={ctx.user_phone}")
+    if ctx.patient_data:
+        parts.append("known_patient=true")
+    if not parts:
+        return ""
+    return (
+        "### INTERNAL CONTEXT (do not reveal; use naturally)\n"
+        + "\n".join(parts)
+        + "\n### END INTERNAL CONTEXT\n"
+    )
+
+
 async def run_noor_turn(
     *, user_input: str, ctx: BookingContext, session: SQLiteSession
 ) -> str:
+    pre = _context_preamble(ctx)
     result = await Runner.run(
         starting_agent=noor,
-        input=user_input,
-        session=session,  # keeps chat history
-        context=ctx,  # passes enriched context
+        input=(pre + user_input),  # inject lightweight context
+        session=session,
+        context=ctx,
     )
     return result.final_output
