@@ -40,7 +40,7 @@ summarizer = Agent(
 def _guess_language(items: List[dict]) -> str:
     for msg in reversed(items):
         if msg.get("role") == "user":
-            text = ItemHelpers.text_from_input_item(msg) or ""
+            text = ItemHelpers.extract_last_text(msg) or ""
             if any("\u0600" <= ch <= "\u06ff" for ch in text):
                 return "ar"
             if any("a" <= ch.lower() <= "z" for ch in text):
@@ -129,7 +129,7 @@ async def save_summary_to_vector_store(
     file_obj.name = (
         f"noor_summary_{summary.user_id}_{summary.end_time_iso.replace(':','-')}.md"
     )
-    uploaded = await client.beta.vector_stores.files.upload_and_poll(
+    uploaded = await client.vector_stores.files.upload_and_poll(
         vector_store_id=vector_store_id,
         file=file_obj,
     )
