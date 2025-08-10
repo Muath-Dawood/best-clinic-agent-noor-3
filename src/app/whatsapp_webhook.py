@@ -77,12 +77,23 @@ async def receive_wa(request: Request) -> Response:
                 "data", []
             )
 
-            # ✅ pick the exact field your API returns
-            if not ctx.user_name and isinstance(details.get("name"), str):
-                ctx.user_name = details["name"].strip()
+            # ✅ always prefer DB name over WhatsApp display name
+            db_name = details.get("name")
+            if isinstance(db_name, str) and db_name.strip():
+                ctx.user_name = db_name.strip()
+            elif not ctx.user_name:
+                # fallback to WhatsApp sender display name if we still don't have one
+                wa_display_name = body.get("senderData", {}).get("senderName")
+                if isinstance(wa_display_name, str) and wa_display_name.strip():
+                    ctx.user_name = wa_display_name.strip()
 
             print("[lookup] FOUND:", ctx.user_phone, "→", ctx.user_name or "<no name>")
         else:
+            # optional: fallback to WhatsApp sender name when no DB record
+            if not ctx.user_name:
+                wa_display_name = body.get("senderData", {}).get("senderName")
+                if isinstance(wa_display_name, str) and wa_display_name.strip():
+                    ctx.user_name = wa_display_name.strip()
             print("[lookup] NOT FOUND:", ctx.user_phone)
     # --- Run Noor with session + context ---
     try:

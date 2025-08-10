@@ -27,7 +27,7 @@ def _context_preamble(ctx: BookingContext) -> str:
     if not parts:
         return ""
     return (
-        "### INTERNAL CONTEXT (do not reveal; use naturally)\n"
+        "### INTERNAL CONTEXT (do not reveal; you can use naturally in conversation e.g. name for greeting)\n"
         + "\n".join(parts)
         + "\n### END INTERNAL CONTEXT\n"
     )
