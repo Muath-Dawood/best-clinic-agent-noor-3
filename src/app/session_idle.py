@@ -53,16 +53,21 @@ async def _check_and_finalize(user_id: str) -> None:
 
         # build summary text
         try:
-            summary_md = await build_summary(session=session, ctx=ctx)
+            summary = await build_summary(
+                user_id=user_id,
+                user_name=ctx.user_name,
+                user_phone=ctx.user_phone,
+                session=session,
+            )
         except Exception:
-            summary_md = None
+            summary = None
 
         # save to vector store if configured
         try:
             vsid = _vector_store_id()
-            if vsid and summary_md:
+            if vsid and summary:
                 await save_summary_to_vector_store(
-                    vector_store_id=vsid, summary=summary_md
+                    vector_store_id=vsid, summary=summary
                 )
         except Exception:
             # non‑fatal
