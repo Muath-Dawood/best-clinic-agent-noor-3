@@ -9,7 +9,7 @@ from src.app.state_manager import get_state, clear_state
 from src.app.context_models import BookingContext
 
 # 30 minutes
-IDLE_SECONDS = 30 * 60
+IDLE_SECONDS = int(os.getenv("IDLE_SECONDS", "1800"))
 
 # last activity timestamp per user_id
 _last_seen: Dict[str, float] = {}
