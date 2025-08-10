@@ -7,6 +7,7 @@ from agents import SQLiteSession
 from src.app.session_memory import build_summary, save_summary_to_vector_store
 from src.app.state_manager import get_state, clear_state
 from src.app.context_models import BookingContext
+from src.app.logging import get_logger
 
 # 30 minutes
 IDLE_SECONDS = int(os.getenv("IDLE_SECONDS", "1800"))
@@ -17,6 +18,8 @@ _last_seen: Dict[str, float] = {}
 _running_watchers: Dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
 
+logger = get_logger("noor.idle")
+
 
 def _vector_store_id() -> Optional[str]:
     v = os.getenv("VECTOR_STORE_ID_SUMMARIES", "").strip()
@@ -26,6 +29,7 @@ def _vector_store_id() -> Optional[str]:
 async def update_last_seen(user_id: str) -> None:
     async with _lock:
         _last_seen[user_id] = asyncio.get_event_loop().time()
+    logger.info(f"idle: last_seen updated for {user_id}")
 
 
 async def _check_and_finalize(user_id: str) -> None:
@@ -42,15 +46,17 @@ async def _check_and_finalize(user_id: str) -> None:
         async with _lock:
             # if changed, user sent something; abort
             if _last_seen.get(user_id, 0.0) != started_at:
+                logger.info(f"idle: aborted (activity) for {user_id}")
                 return
 
         # pull current state
         state: Optional[Tuple[BookingContext, SQLiteSession]] = get_state(user_id)
         if not state:
+            logger.info(f"idle: no state for {user_id}")
             return
 
         ctx, session = state
-
+        logger.info(f"idle: building summary for {user_id}")
         # build summary text
         try:
             summary = await build_summary(
@@ -59,24 +65,33 @@ async def _check_and_finalize(user_id: str) -> None:
                 user_phone=ctx.user_phone,
                 session=session,
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"idle: build_summary failed for {user_id}: {e}")
             summary = None
 
         # save to vector store if configured
         try:
             vsid = _vector_store_id()
             if vsid and summary:
+                logger.info(f"idle: uploading summary to {vsid} for {user_id}")
                 await save_summary_to_vector_store(
                     vector_store_id=vsid, summary=summary
                 )
-        except Exception:
+            else:
+                logger.warning(
+                    f"idle: skip upload (vsid={vsid}, has_summary={bool(summary)}) for {user_id}"
+                )
+        except Exception as e:
             # non‑fatal
+            logger.error(f"idle: upload failed for {user_id}: {e}")
             pass
 
         # clear session/context
         try:
             await clear_state(user_id)
-        except Exception:
+            logger.info(f"idle: state cleared for {user_id}")
+        except Exception as e:
+            logger.error(f"idle: clear_state error for {user_id}: {e}")
             pass
     finally:
         # allow a new watcher to be scheduled later
@@ -93,3 +108,4 @@ async def schedule_idle_watch(user_id: str) -> None:
             return
         task = asyncio.create_task(_check_and_finalize(user_id))
         _running_watchers[user_id] = task
+    logger.info(f"idle: watcher scheduled for {user_id} ({IDLE_SECONDS}s)")
