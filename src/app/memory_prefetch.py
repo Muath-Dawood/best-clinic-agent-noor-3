@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from typing import Optional, Tuple, List
-from agents import Agent, Runner, FileSearchTool
+from agents import Agent, Runner, FileSearchTool, RunConfig, ModelSettings
 from src.app.logging import get_logger
 
 logger = get_logger("noor.prefetch")
@@ -21,11 +21,14 @@ def _build_summaries_tool():
 _prefetch_agent = Agent(
     name="NoorMemoryFetcher",
     instructions=(
-        "You MUST call the FileSearch tool exactly once to retrieve chat summaries. "
-        "Search only summaries (markdown with YAML front matter) where type=noor_chat_summary. "
-        "Pick up to N most recent items by end_time_iso (descending). "
-        "Return ONLY the body text (not the YAML header) of each summary, in order, "
-        "separated by a line that is exactly: '---'. No extra text."
+        "You MUST call the FileSearch tool exactly once to retrieve chat summaries.\n"
+        "Filter: type=noor_chat_summary AND user_id=<given> (and user_phone if provided).\n"
+        "Sort by end_time_iso DESC and return up to N items.\n"
+        "OUTPUT CONTRACT (strict):\n"
+        "- Return ONLY the body text (not the YAML front matter) of each summary, in order.\n"
+        "- Separate summaries by a single line containing exactly: ---\n"
+        "- If no results, return an empty string.\n"
+        "- Do NOT add any commentary, headers, or tool mentions."
     ),
     tools=[t for t in [_build_summaries_tool()] if t],
     model="gpt-4o-mini",
@@ -51,10 +54,15 @@ async def fetch_recent_summaries_text(
     prompt = (
         f"N={limit}\n"
         f"Query: {query}\n"
-        "Return ONLY the body texts separated by a line '---' (no quotes)."
+        "Return ONLY the body texts separated by a line '---' (no quotes). "
+        "If none, return an empty string."
     )
 
-    res = await Runner.run(_prefetch_agent, input=prompt)
+    res = await Runner.run(
+        _prefetch_agent,
+        input=prompt,
+        run_config=RunConfig(model_settings=ModelSettings(tool_choice="required")),
+    )
     raw = (res.final_output or "").strip()
 
     if not raw:

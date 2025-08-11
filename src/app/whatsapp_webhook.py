@@ -78,6 +78,8 @@ async def receive_wa(request: Request) -> Response:
         # WhatsApp usually gives a display name in senderData.senderName
         ctx.user_name = body.get("senderData", {}).get("senderName")
 
+    ctx.user_has_attachments = False
+
     if ctx.patient_data is None:
         patient = await fetch_patient_data_from_whatsapp_id(sender_id)
         if patient:

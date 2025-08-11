@@ -24,6 +24,9 @@ def _context_preamble(ctx: BookingContext, previous_summaries_text: str | None) 
             lines.append(f"user_phone={ctx.user_phone}")
         if ctx.patient_data:
             lines.append("known_patient=true")
+        lines.append(
+            f"user_has_attachments={str(bool(ctx.user_has_attachments)).lower()}"
+        )
         lines.append("### END INTERNAL CONTEXT")
     if previous_summaries_text:
         lines.append("### PREVIOUS CHAT SUMMARIES (internal, do not quote)")

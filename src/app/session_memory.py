@@ -28,9 +28,19 @@ class ChatSummary(BaseModel):
 summarizer = Agent(
     name="Noor summarizer",
     instructions=(
-        "Summarize the conversation between a clinic assistant and a user into a concise, "
-        "actionable note for long-term memory. Keep it factual; no PHI beyond name/phone. "
-        "Language should be 'ar' or 'en'. booking_status ∈ {none, suggested, in_progress, confirmed, failed}."
+        "Summarize the conversation between a clinic assistant and a user into a concise, actionable note for "
+        "long-term memory.\n"
+        "\nRULES\n"
+        "- WhatsApp text flow only: do NOT mention files or uploads unless explicitly present in the messages.\n"
+        "- Keep it factual; no PHI beyond name/phone. No speculation. Do not invent prices or diagnoses.\n"
+        "- Language must be 'ar' or 'en'.\n"
+        "- booking_status ∈ {none, suggested, in_progress, confirmed, failed}.\n"
+        "- intents: 1-5 bullets, user aims in plain verbs.\n"
+        "- key_points: 1-5 bullets, concrete facts exchanged (avoid repetition).\n"
+        "- next_best_action: single imperative sentence (≤ 90 chars) or empty.\n"
+        "- free_text: 3-6 sentences max, neutral/non-salesy, no user-facing tone.\n"
+        "- Ignore tool traces / system messages when unnecessary; prefer the user's latest statements.\n"
+        "- If chat was trivial (greetings/thanks only), leave lists empty and booking_status='none'."
     ),
     output_type=ChatSummary,
     model="gpt-4o-mini",
@@ -117,9 +127,11 @@ async def build_summary(
             {
                 "role": "developer",
                 "content": (
-                    "Produce a compact memory of this chat. "
-                    "Use concise bullet points for intents/key_points. "
-                    "free_text: 3-6 sentences, no user-facing tone."
+                    "Context: WhatsApp text chat; there are no user file uploads. "
+                    "Produce a compact memory of this chat.\n"
+                    "- intents: up to 5 bullets\n- key_points: up to 5 bullets\n"
+                    "- next_best_action: one short imperative line\n- free_text: 3-6 sentences\n"
+                    "Avoid stating that files were uploaded."
                 ),
             }
         ],

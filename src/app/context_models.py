@@ -13,6 +13,7 @@ class BookingContext:
     # patient record & history (if found)
     patient_data: Optional[Dict] = None
     previous_appointments: Optional[List[Dict]] = None
+    user_has_attachments: bool = False
 
     # booking selections
     section_pm_si: Optional[str] = None
