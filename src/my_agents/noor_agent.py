@@ -14,10 +14,10 @@ noor = Agent(
 )
 
 
-def _context_preamble(ctx: BookingContext, previous_summary: str | None) -> str:
+def _context_preamble(ctx: BookingContext, previous_summaries_text: str | None) -> str:
     lines = []
     if ctx and (ctx.user_name or ctx.user_phone):
-        lines.append("### INTERNAL CONTEXT (do not reveal)")
+        lines += ["### INTERNAL CONTEXT (do not reveal)"]
         if ctx.user_name:
             lines.append(f"user_name={ctx.user_name}")
         if ctx.user_phone:
@@ -25,10 +25,10 @@ def _context_preamble(ctx: BookingContext, previous_summary: str | None) -> str:
         if ctx.patient_data:
             lines.append("known_patient=true")
         lines.append("### END INTERNAL CONTEXT")
-    if previous_summary:
-        lines.append("### PREVIOUS CHAT SUMMARY (internal, do not quote)")
-        lines.append(previous_summary.strip())
-        lines.append("### END PREVIOUS SUMMARY")
+    if previous_summaries_text:
+        lines.append("### PREVIOUS CHAT SUMMARIES (internal, do not quote)")
+        lines.append(previous_summaries_text.strip())
+        lines.append("### END PREVIOUS SUMMARIES")
     return "\n".join(lines)
 
 
@@ -37,12 +37,12 @@ async def run_noor_turn(
     user_input: str,
     ctx: BookingContext,
     session: SQLiteSession,
-    previous_summary: str | None = None,
+    previous_summaries_text: str | None = None,
 ) -> str:
-    pre = _context_preamble(ctx, previous_summary)
+    pre = _context_preamble(ctx, previous_summaries_text)
     result = await Runner.run(
         starting_agent=noor,
-        input=(pre + user_input),  # inject lightweight context
+        input=(pre + ("\n\n" if pre else "") + user_input),
         session=session,
         context=ctx,
     )

@@ -33,7 +33,7 @@ summarizer = Agent(
         "Language should be 'ar' or 'en'. booking_status ∈ {none, suggested, in_progress, confirmed, failed}."
     ),
     output_type=ChatSummary,
-    model="gpt-4.1-mini",
+    model="gpt-4o-mini",
 )
 
 
