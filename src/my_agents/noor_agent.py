@@ -14,29 +14,32 @@ noor = Agent(
 )
 
 
-def _context_preamble(ctx: BookingContext) -> str:
-    if not ctx:
-        return ""
-    parts = []
-    if ctx.user_name:
-        parts.append(f"user_name={ctx.user_name}")
-    if ctx.user_phone:
-        parts.append(f"user_phone={ctx.user_phone}")
-    if ctx.patient_data:
-        parts.append("known_patient=true")
-    if not parts:
-        return ""
-    return (
-        "### INTERNAL CONTEXT (do not reveal; you can use naturally in conversation e.g. name for greeting)\n"
-        + "\n".join(parts)
-        + "\n### END INTERNAL CONTEXT\n"
-    )
+def _context_preamble(ctx: BookingContext, previous_summary: str | None) -> str:
+    lines = []
+    if ctx and (ctx.user_name or ctx.user_phone):
+        lines.append("### INTERNAL CONTEXT (do not reveal)")
+        if ctx.user_name:
+            lines.append(f"user_name={ctx.user_name}")
+        if ctx.user_phone:
+            lines.append(f"user_phone={ctx.user_phone}")
+        if ctx.patient_data:
+            lines.append("known_patient=true")
+        lines.append("### END INTERNAL CONTEXT")
+    if previous_summary:
+        lines.append("### PREVIOUS CHAT SUMMARY (internal, do not quote)")
+        lines.append(previous_summary.strip())
+        lines.append("### END PREVIOUS SUMMARY")
+    return "\n".join(lines)
 
 
 async def run_noor_turn(
-    *, user_input: str, ctx: BookingContext, session: SQLiteSession
+    *,
+    user_input: str,
+    ctx: BookingContext,
+    session: SQLiteSession,
+    previous_summary: str | None = None,
 ) -> str:
-    pre = _context_preamble(ctx)
+    pre = _context_preamble(ctx, previous_summary)
     result = await Runner.run(
         starting_agent=noor,
         input=(pre + user_input),  # inject lightweight context

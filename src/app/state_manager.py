@@ -20,6 +20,10 @@ async def clear_state(user_id: str) -> None:
     if pair:
         _, sess = pair
         try:
+            await sess.clear_session()
+        except Exception:
+            pass
+        try:
             await sess.close()
         except Exception:
             pass

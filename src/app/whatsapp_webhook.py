@@ -13,6 +13,7 @@ from src.app.patient_lookup import fetch_patient_data_from_whatsapp_id
 from src.my_agents.noor_agent import run_noor_turn
 from src.app.session_idle import update_last_seen, schedule_idle_watch
 from src.app.logging import get_logger
+from src.app.memory_prefetch import fetch_latest_summary_text
 
 # Export a router (main.py mounts it at prefix="/webhook")
 router = APIRouter()
@@ -59,9 +60,11 @@ async def receive_wa(request: Request) -> Response:
     state = get_state(sender_id)
     if state:
         ctx, session = state
+        is_new_session = False
     else:
         ctx = BookingContext()
         session = SQLiteSession(sender_id, "noor_sessions.db")
+        is_new_session = True
 
     # --- Enrich context ONCE (silent) ---
     if not ctx.user_phone:
@@ -103,9 +106,25 @@ async def receive_wa(request: Request) -> Response:
                 if isinstance(wa_display_name, str) and wa_display_name.strip():
                     ctx.user_name = wa_display_name.strip()
             logger.info(f"[lookup] NOT FOUND: {ctx.user_phone}")
+
+    # Prefetch last summary only at the start of a brand-new session
+    previous_summary = None
+    if is_new_session:
+        try:
+            previous_summary = await fetch_latest_summary_text(
+                user_id=sender_id, user_phone=ctx.user_phone
+            )
+        except Exception:
+            previous_summary = None
+
     # --- Run Noor with session + context ---
     try:
-        reply = await run_noor_turn(user_input=text_in, ctx=ctx, session=session)
+        reply = await run_noor_turn(
+            user_input=text_in,
+            ctx=ctx,
+            session=session,
+            previous_summary=previous_summary,
+        )
     except Exception:
         reply = "عذرًا، في خلل تقني بسيط الآن. جرّب بعد قليل لو تكرّمت."
 
