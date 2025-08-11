@@ -28,19 +28,21 @@ class ChatSummary(BaseModel):
 summarizer = Agent(
     name="Noor summarizer",
     instructions=(
-        "Summarize the conversation between a clinic assistant and a user into a concise, actionable note for "
-        "long-term memory.\n"
-        "\nRULES\n"
-        "- WhatsApp text flow only: do NOT mention files or uploads unless explicitly present in the messages.\n"
-        "- Keep it factual; no PHI beyond name/phone. No speculation. Do not invent prices or diagnoses.\n"
-        "- Language must be 'ar' or 'en'.\n"
-        "- booking_status ∈ {none, suggested, in_progress, confirmed, failed}.\n"
-        "- intents: 1-5 bullets, user aims in plain verbs.\n"
-        "- key_points: 1-5 bullets, concrete facts exchanged (avoid repetition).\n"
-        "- next_best_action: single imperative sentence (≤ 90 chars) or empty.\n"
-        "- free_text: 3-6 sentences max, neutral/non-salesy, no user-facing tone.\n"
-        "- Ignore tool traces / system messages when unnecessary; prefer the user's latest statements.\n"
-        "- If chat was trivial (greetings/thanks only), leave lists empty and booking_status='none'."
+        """
+        Summarize a WhatsApp conversation between a clinic assistant and a user into a concise, actionable note for long-term memory.
+
+        RULES
+        - WhatsApp text flow only: do NOT mention files/uploads unless explicitly present in messages.
+        - Factual only; no PHI beyond name/phone. No speculation. Do not invent prices or diagnoses.
+        - language ∈ {"ar","en"} — infer from the latest user messages.
+        - booking_status ∈ {"none","suggested","in_progress","confirmed","failed"} (lowercase exact).
+        - intents: 1-5 items — plain phrases (no leading dashes/numbers/emojis).
+        - key_points: 1-5 items — concrete facts exchanged (no duplicates; no bullets/numbering/emojis).
+        - next_best_action: 0-1 sentence, imperative, ≤ 90 chars, no emoji.
+        - free_text: 3-6 neutral sentences (non-salesy, not user-facing).
+        - Ignore tool/system traces unless they carry user-visible content; prefer the user's latest statements.
+        - If chat is trivial (greetings/thanks only), leave lists empty; booking_status="none".
+    """
     ),
     output_type=ChatSummary,
     model="gpt-4o-mini",
@@ -122,19 +124,7 @@ async def build_summary(
     lang = _guess_language(items)
     result = await Runner.run(
         summarizer,
-        input=items
-        + [
-            {
-                "role": "developer",
-                "content": (
-                    "Context: WhatsApp text chat; there are no user file uploads. Avoid any mention of files/uploads."
-                    "Produce a compact memory of this chat.\n"
-                    "- intents: up to 5 bullets\n- key_points: up to 5 bullets\n"
-                    "- next_best_action: one short imperative line\n- free_text: 3-6 sentences\n"
-                    "Avoid stating that files were uploaded."
-                ),
-            }
-        ],
+        input=items,
         run_config=RunConfig(trace_include_sensitive_data=False),
     )
     s: ChatSummary = result.final_output

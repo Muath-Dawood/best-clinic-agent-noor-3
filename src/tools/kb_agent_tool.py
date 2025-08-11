@@ -39,9 +39,9 @@ def _scrub_files_phrasing(text: str) -> str:
 _kb_agent = Agent(
     name="ClinicKBAgent",
     instructions=(
-        "You MUST call FileSearch exactly once to retrieve official clinic or medical facts"
-        "(address/phones/services/doctors/prices/hours/policies/conditions/treatments). "
-        "Answer concisely in the user's language as short bullet points (3-7). "
+        "You MUST call FileSearch tool and retrieve official clinic or medical facts"
+        "(address/phones/services/doctors/prices/hours/policies/conditions/treatments) as per input query. "
+        "Answer concisely in the user's language as short bullet points (max 10 points). "
         "Do NOT mention tools, files, documents, uploads, or citations."
     ),
     tools=[t for t in [_build_filesearch()] if t],
