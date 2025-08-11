@@ -85,9 +85,6 @@ async def receive_wa(request: Request) -> Response:
         if patient:
             details = patient.get("details") or {}
             ctx.patient_data = details
-            ctx.previous_appointments = (patient.get("appointments") or {}).get(
-                "data", []
-            )
 
             # ✅ always prefer DB name over WhatsApp display name
             db_name = details.get("name")
@@ -111,21 +108,18 @@ async def receive_wa(request: Request) -> Response:
             logger.info(f"[lookup] NOT FOUND: {ctx.user_phone}")
 
     # Prefetch last summary only at the start of a brand-new session
-
-    previous_summaries_text = ""
     if is_new_session:
         try:
             parts, combined = await fetch_recent_summaries_text(
                 user_id=sender_id, user_phone=ctx.user_phone
             )
-            previous_summaries_text = combined
+            ctx.previous_summaries = parts
             logger.info(
                 f"prefetch: feeding {len(parts)} summaries into first turn "
                 f"(chars={len(combined)}) for {sender_id}"
             )
         except Exception as e:
             logger.error(f"prefetch: error for {sender_id}: {e}")
-            previous_summaries_text = ""
 
     # --- Run Noor with session + context ---
     try:
@@ -133,7 +127,6 @@ async def receive_wa(request: Request) -> Response:
             user_input=text_in,
             ctx=ctx,
             session=session,
-            previous_summaries_text=previous_summaries_text,
         )
     except Exception:
         reply = "عذرًا، في خلل تقني بسيط الآن. جرّب بعد قليل لو تكرّمت."
