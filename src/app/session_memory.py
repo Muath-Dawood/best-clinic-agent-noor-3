@@ -127,7 +127,7 @@ async def build_summary(
             {
                 "role": "developer",
                 "content": (
-                    "Context: WhatsApp text chat; there are no user file uploads. "
+                    "Context: WhatsApp text chat; there are no user file uploads. Avoid any mention of files/uploads."
                     "Produce a compact memory of this chat.\n"
                     "- intents: up to 5 bullets\n- key_points: up to 5 bullets\n"
                     "- next_best_action: one short imperative line\n- free_text: 3-6 sentences\n"
