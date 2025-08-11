@@ -25,10 +25,10 @@ _prefetch_agent = Agent(
         "Filter: type=noor_chat_summary AND user_id=<given> (and user_phone if provided).\n"
         "Sort by end_time_iso DESC and return up to N items.\n"
         "OUTPUT CONTRACT (strict):\n"
-        "- Return ONLY the body text (not the YAML front matter) of each summary, in order.\n"
-        "- Separate summaries by a single line containing exactly: ---\n"
+        "- Return ONLY the Key points, Next best action, and Reacp from the body text (not the YAML front matter) of each summary as it is, in order.\n"
+        "- Separate summaries content by a single line containing exactly: ---\n"
         "- If no results, return an empty string.\n"
-        "- Do NOT add any commentary, headers, or tool mentions."
+        "- Do NOT add any commentary, headers, or tool and files mentions."
     ),
     tools=[t for t in [_build_summaries_tool()] if t],
     model="gpt-4o-mini",

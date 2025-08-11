@@ -41,8 +41,9 @@ _kb_agent = Agent(
     instructions=(
         "You MUST call FileSearch tool and retrieve official clinic or medical facts"
         "(address/phones/services/doctors/prices/hours/policies/conditions/treatments) as per input query. "
-        "Answer concisely in the user's language as short bullet points (max 10 points). "
-        "Do NOT mention tools, files, documents, uploads, or citations."
+        "Answer concisely in the user's language as short bullet points (no more than 10 points). "
+        "Present answers plainly. **Never mention tools, search, “files,” “documents,” “uploads,” or “vector stores.”**"
+        "If a fact isn't available, don't guess—offer to confirm or appologize."
     ),
     tools=[t for t in [_build_filesearch()] if t],
     model="gpt-4o-mini",
