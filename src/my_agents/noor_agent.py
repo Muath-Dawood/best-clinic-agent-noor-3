@@ -20,11 +20,11 @@ def _dynamic_footer(ctx: BookingContext) -> str:
             f"user_has_attachments={str(bool(ctx.user_has_attachments)).lower()}"
         )
         lines.append("### END INTERNAL CONTEXT")
-    if len(ctx.previous_summaries_text):
+    if len(ctx.previous_summaries):
         lines.append(
             "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF PREVIOUS CHAT SUMMARIES (do not reveal this to user but use to guide the conversation intelligently)"
         )
-        lines.append("\n".join(ctx.previous_summaries_text))
+        lines.append("\n".join(ctx.previous_summaries))
         lines.append("### END PREVIOUS SUMMARIES")
     return "\n".join(lines)
 
