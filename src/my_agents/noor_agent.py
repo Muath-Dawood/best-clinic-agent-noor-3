@@ -1,23 +1,15 @@
 from agents import Agent, Runner, SQLiteSession
 from src.my_agents.prompts.system_prompt_noor import SYSTEM_PROMPT
-from src.tools.file_search import build_file_search_tool
+from src.tools.kb_agent_tool import kb_tool_for_noor
 from src.app.context_models import BookingContext
 
-# Build the retrieval tool if VECTOR_STORE_ID is set
-_tools = [t for t in [build_file_search_tool()] if t]
 
-noor = Agent(
-    name="Noor",
-    instructions=SYSTEM_PROMPT,
-    model="gpt-4o",
-    tools=_tools,
-)
-
-
-def _context_preamble(ctx: BookingContext, previous_summaries_text: str | None) -> str:
+def _dynamic_footer(ctx: BookingContext, previous_summaries_text: str | None) -> str:
     lines = []
     if ctx and (ctx.user_name or ctx.user_phone):
-        lines += ["### INTERNAL CONTEXT (do not reveal)"]
+        lines += [
+            "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF INTERNAL CONTEXT (do not reveal to user use the info natuarally)"
+        ]
         if ctx.user_name:
             lines.append(f"user_name={ctx.user_name}")
         if ctx.user_phone:
@@ -29,10 +21,24 @@ def _context_preamble(ctx: BookingContext, previous_summaries_text: str | None) 
         )
         lines.append("### END INTERNAL CONTEXT")
     if previous_summaries_text:
-        lines.append("### PREVIOUS CHAT SUMMARIES (internal, do not quote)")
+        lines.append(
+            "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF PREVIOUS CHAT SUMMARIES (do not reveal this to user but use to guide the conversation intelligently)"
+        )
         lines.append(previous_summaries_text.strip())
         lines.append("### END PREVIOUS SUMMARIES")
     return "\n".join(lines)
+
+
+def _build_noor_agent(
+    ctx: BookingContext, previous_summaries_text: str | None
+) -> Agent:
+    instructions = (
+        SYSTEM_PROMPT + "\n\n" + _dynamic_footer(ctx, previous_summaries_text)
+    )
+    tools = []
+    tools += kb_tool_for_noor()
+
+    return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
 
 
 async def run_noor_turn(
@@ -40,13 +46,11 @@ async def run_noor_turn(
     user_input: str,
     ctx: BookingContext,
     session: SQLiteSession,
-    previous_summaries_text: str | None = None,
+    previous_summaries_text: str | None,
 ) -> str:
-    pre = _context_preamble(ctx, previous_summaries_text)
+
+    noor = _build_noor_agent(ctx, previous_summaries_text)
     result = await Runner.run(
-        starting_agent=noor,
-        input=(pre + ("\n\n" if pre else "") + user_input),
-        session=session,
-        context=ctx,
+        starting_agent=noor, input=user_input, session=session, context=ctx
     )
     return result.final_output
