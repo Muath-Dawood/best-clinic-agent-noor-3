@@ -128,7 +128,8 @@ async def receive_wa(request: Request) -> Response:
             ctx=ctx,
             session=session,
         )
-    except Exception:
+    except Exception as e:
+        print(e)
         reply = "عذرًا، في خلل تقني بسيط الآن. جرّب بعد قليل لو تكرّمت."
 
     # Persist state and send reply
