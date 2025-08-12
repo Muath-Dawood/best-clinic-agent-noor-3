@@ -1,0 +1,236 @@
+"""
+Booking tool for Best Clinic 24 - handles all API complexity and state management.
+This tool manages the complete booking flow while keeping Noor's responses natural.
+"""
+
+from typing import List, Dict, Optional, Tuple
+import httpx
+from dateparser import parse as parse_date
+
+from src.data.services import (
+    get_services_by_gender,
+    get_cus_sec_pm_si_by_gender,
+    find_service_by_pm_si,
+)
+
+
+class BookingFlowError(Exception):
+    """Custom exception for booking flow errors."""
+
+    pass
+
+
+class BookingTool:
+    """Handles all booking API interactions and state management."""
+
+    def __init__(self):
+        self.base_url = "https://www.bestclinic24.net"
+        self.timeout = 10.0
+
+    async def _make_api_call(
+        self, endpoint: str, data: Dict, cus_sec_pm_si: str
+    ) -> Dict:
+        """Make API call to booking endpoints."""
+        url = f"{self.base_url}/{endpoint}"
+
+        # Prepare multipart form data
+        form_data = {}
+        for key, value in data.items():
+            if isinstance(value, list):
+                # Handle array fields like services_pm_si[]
+                # For arrays, we need to send multiple values with the same key
+                form_data[key] = value  # httpx will handle this correctly
+            else:
+                form_data[key] = value
+
+        # Always include the required cus_sec_pm_si
+        form_data["cus_sec_pm_si"] = cus_sec_pm_si
+
+        # Include all the headers that the server expects
+        headers = {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "en-US,en;q=0.9,pt;q=0.8",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": self.base_url,
+            "Referer": f"{self.base_url}/BOKNWVIWW",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "sec-ch-ua": '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, data=form_data, headers=headers)
+
+                response.raise_for_status()
+
+                # API returns JSON but with text/html content-type
+                result = response.json()
+
+                if not result.get("result"):
+                    print("--- FULL API RESPONSE ---")
+                    print(result)
+                    print("-------------------------")
+                    raise BookingFlowError(
+                        f"API error: {result.get('message', 'Unknown error')} | Full response: {result}"
+                    )
+
+                return result
+
+        except httpx.TimeoutException:
+            raise BookingFlowError("API request timed out")
+        except httpx.HTTPStatusError as e:
+            raise BookingFlowError(f"HTTP error {e.response.status_code}")
+        except Exception as e:
+            raise BookingFlowError(f"API call failed: {str(e)}")
+
+    def parse_natural_date(self, text: str, language: str = "ar") -> Optional[str]:
+        """Parse natural language dates like 'بعد ٣ أيام' or 'next Sunday'."""
+        try:
+            # Set language for dateparser
+            settings = {"PREFER_DATES_FROM": "future"}
+            if language == "ar":
+                settings["PREFER_DAY_OF_MONTH"] = "first"
+
+            parsed_date = parse_date(text, settings=settings)
+            if parsed_date:
+                return parsed_date.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        return None
+
+    def parse_natural_time(self, text: str) -> Optional[str]:
+        """Parse natural language times like 'صباحاً' or 'morning'."""
+        time_mappings = {
+            # Arabic
+            "صباحاً": "09:00",
+            "الصباح": "09:00",
+            "ظهراً": "12:00",
+            "الظهر": "12:00",
+            "عصراً": "15:00",
+            "العصر": "15:00",
+            "مساءً": "18:00",
+            "المساء": "18:00",
+            "ليلاً": "20:00",
+            "الليل": "20:00",
+            # English
+            "morning": "09:00",
+            "noon": "12:00",
+            "afternoon": "15:00",
+            "evening": "18:00",
+            "night": "20:00",
+        }
+
+        text_lower = text.lower().strip()
+        return time_mappings.get(text_lower)
+
+    async def get_available_dates(
+        self, services_pm_si: List[str], gender: str
+    ) -> List[str]:
+        """Get available dates for selected services."""
+        cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
+
+        data = {"services_pm_si[]": services_pm_si}
+
+        result = await self._make_api_call("BOKGTAVBLDTS", data, cus_sec_pm_si)
+        return result.get("data", [])
+
+    async def get_available_times(
+        self, date: str, services_pm_si: List[str], gender: str
+    ) -> List[str]:
+        """Get available times for a specific date and services."""
+        cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
+
+        data = {"date": date, "services_pm_si[]": services_pm_si}
+
+        result = await self._make_api_call("BOKGTAVBLTIMS", data, cus_sec_pm_si)
+        return result.get("data", [])
+
+    async def get_available_employees(
+        self, date: str, time: str, services_pm_si: List[str], gender: str
+    ) -> Tuple[List[Dict], Dict]:
+        """Get available employees and pricing summary."""
+        cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
+
+        data = {"date": date, "time": time, "services_pm_si[]": services_pm_si}
+
+        result = await self._make_api_call("BOKGTAVBLEMPLS", data, cus_sec_pm_si)
+
+        employees = result.get("data", [])
+        checkout_summary = result.get("checkout_summary", {})
+
+        return employees, checkout_summary
+
+    async def create_booking(
+        self,
+        date: str,
+        time: str,
+        employee_pm_si: str,
+        services_pm_si: List[str],
+        customer_info: Dict,
+        gender: str,
+    ) -> Dict:
+        """Create the final booking."""
+        cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
+
+        data = {
+            "date": date,
+            "time": time,
+            "employee_pm_si": employee_pm_si,
+            "services_pm_si[]": services_pm_si,
+            **customer_info,
+        }
+
+        result = await self._make_api_call("BOKINNEW", data, cus_sec_pm_si)
+        return result
+
+    def get_services_for_gender(self, gender: str) -> List[Dict]:
+        """Get available services for a specific gender."""
+        return get_services_by_gender(gender)
+
+    def calculate_total_price(self, services_pm_si: List[str]) -> float:
+        """Calculate total price for selected services."""
+        total = 0.0
+        for pm_si in services_pm_si:
+            service = find_service_by_pm_si(pm_si)
+            if service:
+                total += service["price_numeric"]
+        return total
+
+    def format_booking_summary(
+        self,
+        services: List[Dict],
+        date: str,
+        time: str,
+        employee_name: str,
+        total_price: float,
+    ) -> str:
+        """Format a human-readable booking summary."""
+        service_titles = [s["title"] for s in services]
+        services_text = "\n".join([f"• {title}" for title in service_titles])
+
+        summary = f"""
+📋 ملخص الحجز:
+
+الخدمات:
+{services_text}
+
+📅 التاريخ: {date}
+🕐 الوقت: {time}
+👨‍⚕️ الطبيب: {employee_name}
+💰 السعر الإجمالي: {total_price:.2f} د.ك
+
+هل تريد تأكيد هذا الحجز؟
+        """.strip()
+
+        return summary
+
+
+# Create a singleton instance
+booking_tool = BookingTool()

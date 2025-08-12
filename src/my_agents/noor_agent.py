@@ -1,6 +1,7 @@
 from agents import Agent, Runner, SQLiteSession
 from src.my_agents.prompts.system_prompt_noor import SYSTEM_PROMPT
 from src.tools.kb_agent_tool import kb_tool_for_noor
+from src.tools.booking_agent_tool import booking_tool_for_noor
 from src.app.context_models import BookingContext
 
 
@@ -20,7 +21,7 @@ def _dynamic_footer(ctx: BookingContext) -> str:
             f"user_has_attachments={str(bool(ctx.user_has_attachments)).lower()}"
         )
         lines.append("### END INTERNAL CONTEXT")
-    if len(ctx.previous_summaries):
+    if ctx.previous_summaries and len(ctx.previous_summaries):
         lines.append(
             "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF PREVIOUS CHAT SUMMARIES (do not reveal this to user but use to guide the conversation intelligently)"
         )
@@ -33,6 +34,7 @@ def _build_noor_agent(ctx: BookingContext) -> Agent:
     instructions = SYSTEM_PROMPT + "\n\n" + _dynamic_footer(ctx)
     tools = []
     tools += kb_tool_for_noor()
+    tools += booking_tool_for_noor()  # Add booking capabilities
 
     return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
 

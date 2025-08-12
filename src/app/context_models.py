@@ -10,16 +10,38 @@ class BookingContext:
     user_lang: Optional[str] = None
     tz: str = "Asia/Jerusalem"
 
+    # gender and section (determines available services)
+    gender: Optional[str] = None  # 'male'/'female' or 'ذكر'/'أنثى'
+    section_pm_si: Optional[str] = None  # men's or women's section
+
     # patient record & history (if found)
     patient_data: Optional[Dict] = None
     previous_summaries: Optional[List[str]] = None
     user_has_attachments: bool = False
 
-    # booking selections
-    section_pm_si: Optional[str] = None
-    service_pm_si: Optional[str] = None
-    appointment_date: Optional[str] = None
-    appointment_time: Optional[str] = None
-    employee_pm_si: Optional[str] = None
-    gender: Optional[str] = None
+    # booking selections - these build up as the user progresses
+    selected_services_pm_si: Optional[List[str]] = None  # list of service pm_si tokens
+    selected_services_data: Optional[List[Dict]] = None  # full service objects for display
+
+    # appointment details
+    appointment_date: Optional[str] = None  # YYYY-MM-DD format
+    appointment_time: Optional[str] = None  # HH:MM format
+    employee_pm_si: Optional[str] = None  # selected employee token
+    employee_name: Optional[str] = None  # human-readable employee name
+
+    # pricing
+    total_price: Optional[float] = None
+    price_currency: str = "NIS"
+
+    # booking status
     booking_confirmed: bool = False
+    booking_in_progress: bool = False  # true when user is actively booking
+
+    # customer info for new patients
+    customer_type: Optional[str] = None  # 'new' or 'exists'
+    customer_gender: Optional[str] = None  # for new patients
+
+    # flow guidance
+    next_booking_step: Optional[str] = None  # what Noor should ask next
+    pending_questions: Optional[List[str]] = None  # questions Noor needs to ask
+
