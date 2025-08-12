@@ -1,15 +1,3 @@
-def normalize_gender(gender: Optional[str]) -> str:
-    """Convert gender to English for API ('male'/'female')."""
-    if not gender:
-        return "male"
-    gender = gender.strip().lower()
-    if gender in ["male", "ذكر", "m", "رجال"]:
-        return "male"
-    if gender in ["female", "أنثى", "f", "نساء"]:
-        return "female"
-    return "male"  # fallback
-
-
 """
 Booking Agent Tool - provides functional tools for Noor to handle appointment booking.
 Uses the correct @function_tool pattern from Agents SDK.
@@ -21,6 +9,18 @@ from agents import Agent, function_tool, RunContextWrapper
 from src.tools.booking_tool import booking_tool, BookingFlowError
 from src.data.services import get_services_by_gender, get_service_summary
 from src.app.context_models import BookingContext
+
+
+def normalize_gender(gender: Optional[str]) -> str:
+    """Convert gender to English for API ('male'/'female')."""
+    if not gender:
+        return "male"
+    gender = gender.strip().lower()
+    if gender in ["male", "ذكر", "m", "رجال"]:
+        return "male"
+    if gender in ["female", "أنثى", "f", "نساء"]:
+        return "female"
+    return "male"  # fallback
 
 
 @function_tool
