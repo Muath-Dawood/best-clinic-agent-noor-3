@@ -3,6 +3,7 @@ from src.my_agents.prompts.system_prompt_noor import SYSTEM_PROMPT
 from src.tools.kb_agent_tool import kb_tool_for_noor
 from src.tools.booking_agent_tool import booking_tool_for_noor
 from src.app.context_models import BookingContext
+from src.app.output_sanitizer import redact_tokens
 
 
 def _dynamic_footer(ctx: BookingContext) -> str:
@@ -49,4 +50,4 @@ async def run_noor_turn(
     result = await Runner.run(
         starting_agent=noor, input=user_input, session=session, context=ctx
     )
-    return result.final_output
+    return redact_tokens(result.final_output)
