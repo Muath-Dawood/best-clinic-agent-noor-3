@@ -485,12 +485,26 @@ async def update_booking_context(
     # payloads without needing to filter the field themselves.
     updates_dict.pop("next_booking_step", None)
 
-    if not updates_dict:
-        return ToolResult(
-            public_text="لم يتم تقديم أي تحديثات.", ctx_patch={}, version=ctx.version
-        )
-
     messages: list[str] = []
+
+    # If there is no service specified either currently or in the update
+    # payload, defer any date/time updates until a service is chosen.
+    if not (
+        ctx.selected_services_pm_si or updates_dict.get("selected_services_pm_si")
+    ):
+        defer_map = {
+            "appointment_date": "لا يمكن تحديد التاريخ قبل اختيار الخدمة.",
+            "appointment_time": "لا يمكن تحديد الوقت قبل اختيار الخدمة.",
+        }
+        for field, msg in list(defer_map.items()):
+            if field in updates_dict:
+                updates_dict.pop(field)
+                messages.append(msg)
+
+    if not updates_dict:
+        text = " ".join(messages) if messages else "لم يتم تقديم أي تحديثات."
+        return ToolResult(public_text=text, ctx_patch={}, version=ctx.version)
+
     controller = StepController(ctx)
     start_version = ctx.version
     msg_map = {

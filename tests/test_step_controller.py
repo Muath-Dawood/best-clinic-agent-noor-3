@@ -30,6 +30,19 @@ async def test_update_booking_context_ignores_next_step():
     assert "لم يتم" in result.public_text
 
 
+@pytest.mark.asyncio
+async def test_update_booking_context_defers_without_service():
+    wrapper = DummyWrapper()
+    updates = BookingContextUpdate(
+        appointment_date="2024-06-01", appointment_time="10:00"
+    )
+    payload = json.dumps({"updates": updates.model_dump()})
+    result = await update_booking_context.on_invoke_tool(wrapper, payload)
+    assert result.ctx_patch == {}
+    assert "لا يمكن تحديد التاريخ" in result.public_text
+    assert "لا يمكن تحديد الوقت" in result.public_text
+
+
 def test_apply_patch_sets_next_step():
     ctx = BookingContext()
     controller = StepController(ctx)
