@@ -260,6 +260,39 @@ async def create_booking(
 
     gender = ctx.gender or "male"
 
+    # Re-check that the chosen slot is still available
+    try:
+        current_emps, _ = await booking_tool.get_available_employees(
+            ctx.appointment_date,
+            ctx.appointment_time,
+            ctx.selected_services_pm_si,
+            gender,
+        )
+        if not any(emp.get("pm_si") == employee_pm_si for emp in current_emps):
+            slots = await booking_tool.get_available_times(
+                ctx.appointment_date, ctx.selected_services_pm_si, gender
+            )
+            human_times = [s.get("time") for s in slots if s.get("time")]
+            patch.update(
+                {
+                    "appointment_time": None,
+                    "offered_employees": None,
+                    "checkout_summary": None,
+                    "available_times": slots,
+                    "next_booking_step": BookingStep.SELECT_TIME,
+                }
+            )
+            return ToolResult(
+                public_text=
+                "عذراً، تم حجز هذا الوقت بالفعل. الأوقات المتاحة الأخرى: "
+                + ", ".join(human_times),
+                ctx_patch=patch,
+                private_data={"available_times": slots},
+            )
+    except BookingFlowError:
+        # If availability check fails, proceed to booking attempt
+        pass
+
     if ctx.patient_data:
         customer_info = {"customer_type": "exists", "customer_search": ctx.user_phone}
     else:
@@ -276,6 +309,12 @@ async def create_booking(
             "customer_gender": normalize_gender(ctx.customer_gender or gender),
         }
 
+    chat_id = getattr(ctx, "chat_id", "")
+    idempotency_key = (
+        f"{chat_id}-{ctx.appointment_date}-{ctx.appointment_time}-"
+        f"{employee_pm_si}-{hash(tuple(ctx.selected_services_pm_si))}"
+    )
+
     try:
         result = await booking_tool.create_booking(
             ctx.appointment_date,
@@ -284,6 +323,7 @@ async def create_booking(
             ctx.selected_services_pm_si,
             customer_info,
             gender,
+            idempotency_key=idempotency_key,
         )
 
         if result.get("result"):
@@ -302,10 +342,32 @@ async def create_booking(
         )
 
     except BookingFlowError as e:
-        return ToolResult(
-            public_text=f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}",
-            ctx_patch=patch,
-        )
+        try:
+            slots = await booking_tool.get_available_times(
+                ctx.appointment_date, ctx.selected_services_pm_si, gender
+            )
+            human_times = [s.get("time") for s in slots if s.get("time")]
+            patch.update(
+                {
+                    "appointment_time": None,
+                    "offered_employees": None,
+                    "checkout_summary": None,
+                    "available_times": slots,
+                    "next_booking_step": BookingStep.SELECT_TIME,
+                }
+            )
+            return ToolResult(
+                public_text=
+                f"عذراً، لم يعد الوقت {ctx.appointment_time} متاحاً. الأوقات المتاحة الأخرى: "
+                + ", ".join(human_times),
+                ctx_patch=patch,
+                private_data={"available_times": slots},
+            )
+        except BookingFlowError:
+            return ToolResult(
+                public_text=f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}",
+                ctx_patch=patch,
+            )
 
 
 @function_tool

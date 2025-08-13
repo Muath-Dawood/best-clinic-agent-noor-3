@@ -33,7 +33,11 @@ class BookingTool:
         self.timeout = 10.0
 
     async def _make_api_call(
-        self, endpoint: str, data: Dict, cus_sec_pm_si: str
+        self,
+        endpoint: str,
+        data: Dict,
+        cus_sec_pm_si: str,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> Dict:
         """Make API call to booking endpoints."""
         url = f"{self.base_url}/{endpoint}"
@@ -68,6 +72,9 @@ class BookingTool:
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
+
+        if extra_headers:
+            headers.update(extra_headers)
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -182,6 +189,7 @@ class BookingTool:
         services_pm_si: List[str],
         customer_info: Dict,
         gender: str,
+        idempotency_key: Optional[str] = None,
     ) -> Dict:
         """Create the final booking."""
         cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
@@ -194,7 +202,10 @@ class BookingTool:
             **customer_info,
         }
 
-        result = await self._make_api_call("BOKINNEW", data, cus_sec_pm_si)
+        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+        result = await self._make_api_call(
+            "BOKINNEW", data, cus_sec_pm_si, extra_headers=headers
+        )
         return result
 
     def get_services_for_gender(self, gender: str) -> List[Dict]:
