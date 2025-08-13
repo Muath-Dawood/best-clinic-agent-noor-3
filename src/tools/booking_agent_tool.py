@@ -96,6 +96,12 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
     if not date:
         return "عذراً، يجب تحديد التاريخ أولاً."
 
+    # Normalize natural language dates like "غداً" or "next Sunday"
+    parsed_date = booking_tool.parse_natural_date(
+        date, ctx.user_lang or "ar"
+    )
+    date = parsed_date or date
+
     gender = ctx.gender or "male"
 
     try:
@@ -134,6 +140,15 @@ async def suggest_employees(
 
     if not time:
         return "عذراً، يجب تحديد الوقت أولاً."
+
+    # Normalize stored date and provided time if given in natural language
+    parsed_date = booking_tool.parse_natural_date(
+        ctx.appointment_date, ctx.user_lang or "ar"
+    )
+    ctx.appointment_date = parsed_date or ctx.appointment_date
+
+    parsed_time = booking_tool.parse_natural_time(time)
+    time = parsed_time or time
 
     # Use the pre-built employee_list and locally calculate pricing
     employees = employee_list
