@@ -11,6 +11,10 @@ from src.app.logging import get_logger
 
 # 30 minutes
 IDLE_SECONDS = int(os.getenv("IDLE_SECONDS", "1800"))
+# entries older than this will be purged from _last_seen
+LAST_SEEN_EXPIRY_SECONDS = int(
+    os.getenv("LAST_SEEN_EXPIRY_SECONDS", str(IDLE_SECONDS * 2))
+)
 
 # last activity timestamp per user_id
 _last_seen: Dict[str, float] = {}
@@ -27,8 +31,14 @@ def _vector_store_id() -> Optional[str]:
 
 
 async def update_last_seen(user_id: str) -> None:
+    """Record activity for a user and drop stale entries."""
+    now = asyncio.get_event_loop().time()
     async with _lock:
-        _last_seen[user_id] = asyncio.get_event_loop().time()
+        cutoff = now - LAST_SEEN_EXPIRY_SECONDS
+        stale = [uid for uid, ts in _last_seen.items() if ts < cutoff]
+        for uid in stale:
+            _last_seen.pop(uid, None)
+        _last_seen[user_id] = now
     logger.info(f"idle: last_seen updated for {user_id}")
 
 
@@ -76,6 +86,9 @@ async def _check_and_finalize(user_id: str) -> None:
             logger.info(f"idle: state cleared for {user_id}")
         except Exception as e:
             logger.error(f"idle: clear_state error for {user_id}: {e}")
+        finally:
+            async with _lock:
+                _last_seen.pop(user_id, None)
 
     except asyncio.CancelledError:
         # expected on every new message (we reset the timer)
