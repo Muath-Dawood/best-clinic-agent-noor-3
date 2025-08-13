@@ -24,6 +24,23 @@ GREEN_TOKEN = os.getenv("WA_GREEN_API_TOKEN", "").strip()
 GREEN_URL = (
     f"https://7105.api.greenapi.com/waInstance{GREEN_ID}/sendMessage/{GREEN_TOKEN}"
 )
+# Per Green-API documentation, the maximum size of a text message is 4096 characters.
+# See: https://green-api.com/en/docs/ (falls back to safe default if docs unavailable)
+GREEN_MAX_MESSAGE_LEN = 4096
+
+def _split_for_green_api(text: str, limit: int = GREEN_MAX_MESSAGE_LEN) -> list[str]:
+    """Split ``text`` into chunks not exceeding ``limit`` characters.
+
+    Args:
+        text: The message body to split.
+        limit: Maximum length allowed per chunk.
+
+    Returns:
+        A list of message parts each with ``len(part) <= limit``.
+    """
+    if len(text) <= limit:
+        return [text]
+    return [text[i : i + limit] for i in range(0, len(text), limit)]
 
 logger = get_logger("noor.webhook")
 
@@ -33,33 +50,38 @@ async def _send_whatsapp(chat_id: str, text: str) -> None:
         logger.warning("Skipping WhatsApp send: WA env not configured")
         return
     retries = 3
-    backoff = 1
     async with httpx.AsyncClient(timeout=10) as client:
-        for attempt in range(1, retries + 1):
-            try:
-                resp = await client.post(
-                    GREEN_URL, json={"chatId": chat_id, "message": text}
-                )
-                if 200 <= resp.status_code < 300:
-                    return
-                # Non-2xx response: log body and status
-                logger.error(
-                    "WhatsApp send failed: status=%s body=%s",
-                    resp.status_code,
-                    resp.text,
-                )
-                if resp.status_code in {429} or resp.status_code >= 500:
+        for chunk in _split_for_green_api(text):
+            backoff = 1
+            success = False
+            for attempt in range(1, retries + 1):
+                try:
+                    resp = await client.post(
+                        GREEN_URL, json={"chatId": chat_id, "message": chunk}
+                    )
+                    if 200 <= resp.status_code < 300:
+                        success = True
+                        break
+                    # Non-2xx response: log body and status
+                    logger.error(
+                        "WhatsApp send failed: status=%s body=%s",
+                        resp.status_code,
+                        resp.text,
+                    )
+                    if resp.status_code in {429} or resp.status_code >= 500:
+                        if attempt < retries:
+                            await asyncio.sleep(backoff)
+                            backoff *= 2
+                            continue
+                    break
+                except Exception:
+                    logger.exception("WhatsApp send failed on attempt %d", attempt)
                     if attempt < retries:
                         await asyncio.sleep(backoff)
                         backoff *= 2
                         continue
-                return
-            except Exception:
-                logger.exception("WhatsApp send failed on attempt %d", attempt)
-                if attempt < retries:
-                    await asyncio.sleep(backoff)
-                    backoff *= 2
-                    continue
+                    break
+            if not success:
                 return
 
 
