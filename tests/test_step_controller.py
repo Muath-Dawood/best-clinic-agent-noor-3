@@ -173,6 +173,31 @@ async def test_check_availability_no_slots_prevents_progress(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_check_availability_unknown_service_rejected(monkeypatch):
+    ctx = BookingContext(selected_services_pm_si=["fake-token"])
+    StepController(ctx).apply_patch({})
+    wrapper = DummyWrapper(ctx)
+
+    async def should_not_call(date, services, gender):
+        raise AssertionError("get_available_times should not be called")
+
+    monkeypatch.setattr(
+        booking_agent_tool_module.booking_tool, "get_available_times", should_not_call
+    )
+
+    payload = json.dumps({"date": "2024-06-01"})
+    result = await check_availability.on_invoke_tool(wrapper, payload)
+
+    assert result.ctx_patch == {}
+    StepController(ctx).apply_patch(result.ctx_patch)
+    assert ctx.selected_services_pm_si == ["fake-token"]
+    assert ctx.available_times is None
+    assert ctx.appointment_date is None
+    assert ctx.next_booking_step == BookingStep.SELECT_DATE
+    assert "الخدمة المختارة غير معروفة" in result.public_text
+
+
+@pytest.mark.asyncio
 async def test_suggest_employees_respects_available_times_and_populates(monkeypatch):
     ctx = BookingContext(
         selected_services_pm_si=[CANONICAL_SERVICE_TOKEN],
