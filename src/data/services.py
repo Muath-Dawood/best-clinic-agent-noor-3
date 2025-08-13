@@ -4,6 +4,7 @@ This eliminates the need to call the categories API during booking flow.
 """
 
 from typing import Optional
+from typing import List, Tuple
 
 from src.app.context_models import BookingContext
 
@@ -108,6 +109,66 @@ def find_service_by_pm_si(pm_si: str) -> dict | None:
         if service['pm_si'] == pm_si:
             return service
     return None
+
+def list_all_services() -> list:
+    """Return a flat list of all services."""
+    return MEN_SERVICES + WOMEN_SERVICES
+
+
+def coerce_service_identifiers_to_pm_si(identifiers: List[str]) -> Tuple[List[str], list, List[str]]:
+    """
+    Accept a mixed list of pm_si tokens OR human titles/bullets and
+    return:
+      - pm_si_list: canonical pm_si tokens
+      - matched_services: list of full service dicts (parallel)
+      - unknown: any identifiers we couldn't map
+    """
+    all_services = list_all_services()
+    pm_si_list: List[str] = []
+    matched: list = []
+    unknown: List[str] = []
+
+    for raw in identifiers or []:
+        if not isinstance(raw, str) or not raw.strip():
+            unknown.append(str(raw))
+            continue
+
+    # Trim and normalize string
+        s = str(raw).strip()
+        # 1) already a pm_si?
+        svc = next((x for x in all_services if x['pm_si'] == s), None)
+        if svc:
+            pm_si_list.append(svc['pm_si'])
+            matched.append(svc)
+            continue
+
+        # 2) strip bullet formatting
+        core = s
+        if ' - ' in core:
+            core = core.split(' - ', 1)[0].strip()
+        if core.startswith('•'):
+            core = core.lstrip('•').strip()
+
+        # 3) try exact or contains match on title / title_en
+        svc = next(
+            (
+                x
+                for x in all_services
+                if x['title'] == core
+                or (x.get('title_en') and x['title_en'] == core)
+                or core in x['title']
+                or (x.get('title_en') and core in x['title_en'])
+            ),
+            None,
+        )
+        if svc:
+            pm_si_list.append(svc['pm_si'])
+            matched.append(svc)
+        else:
+            unknown.append(s)
+
+    return pm_si_list, matched, unknown
+
 
 
 def get_service_summary(services: list, ctx: Optional[BookingContext] = None) -> str:

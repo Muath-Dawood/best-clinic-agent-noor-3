@@ -184,6 +184,7 @@ async def test_suggest_employees_respects_available_times_and_populates(monkeypa
     assert ctx.next_booking_step == BookingStep.SELECT_TIME
 
     employees = [{"pm_si": "emp1", "name": "Dr. X"}]
+    norm_employees = [{"pm_si": "emp1", "name": "Dr. X", "display": "Dr. X"}]
     summary = {"price": 100}
 
     async def fake_emps(date, time, services, gender):
@@ -198,6 +199,6 @@ async def test_suggest_employees_respects_available_times_and_populates(monkeypa
     result = await suggest_employees.on_invoke_tool(wrapper, payload)
     StepController(ctx).apply_patch(result.ctx_patch)
     assert ctx.appointment_time == "09:00"
-    assert ctx.offered_employees == employees
+    assert ctx.offered_employees == norm_employees
     assert ctx.checkout_summary == summary
     assert ctx.next_booking_step == BookingStep.SELECT_EMPLOYEE
