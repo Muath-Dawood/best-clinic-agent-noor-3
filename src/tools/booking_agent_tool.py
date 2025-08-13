@@ -374,8 +374,7 @@ _booking_agent = Agent(
         "- suggest_times: Get available times for a specific date\n"
         "- suggest_employees: Get available employees and pricing\n"
         "- create_booking: Finalize the booking\n"
-        "- reset_booking: Start over if user wants to change something\n"
-        "- update_booking_context: Modify booking details directly\n\n"
+        "- reset_booking: Start over if user wants to change something\n\n"
         "RESPOND NATURALLY and helpfully. Don't be a robot!"
     ),
     tools=[
@@ -385,7 +384,6 @@ _booking_agent = Agent(
         suggest_employees,
         create_booking,
         reset_booking,
-        update_booking_context,
     ],
     model="gpt-4o-mini",
 )
@@ -401,6 +399,19 @@ def booking_tool_for_noor():
                 "appointments, check availability, or discuss services. The tool can: show available "
                 "services, check dates/times, suggest employees, and create bookings. Always respond "
                 "naturally in the user's language."
+            ),
+        )
+    ]
+
+
+def update_context_tool_for_noor():
+    """Expose update_booking_context directly for Noor."""
+    return [
+        update_booking_context.as_tool(
+            tool_name="update_booking_context",
+            tool_description=(
+                "Update booking context fields (selected services, date, time, employee, gender, step, etc.). "
+                "Call this whenever booking info changes before using the booking tool."
             ),
         )
     ]
