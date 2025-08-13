@@ -24,7 +24,9 @@ employee_list: List[Dict[str, str]] = [
 ]
 
 
-def _validate_step(ctx: BookingContext, expected: Optional[BookingStep]) -> Optional[str]:
+def _validate_step(
+    ctx: BookingContext, expected: Optional[BookingStep]
+) -> Optional[str]:
     """Ensure the booking flow is in the expected step."""
     if ctx.next_booking_step != expected:
         return "عذراً، لا يمكن تنفيذ هذه الخطوة الآن."
@@ -120,9 +122,7 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
         return "عذراً، يجب تحديد التاريخ أولاً."
 
     # Normalize natural language dates like "غداً" or "next Sunday"
-    parsed_date = booking_tool.parse_natural_date(
-        date, ctx.user_lang or "ar"
-    )
+    parsed_date = booking_tool.parse_natural_date(date, ctx.user_lang or "ar")
     date = parsed_date or date
 
     gender = ctx.gender or "male"
@@ -180,9 +180,7 @@ async def suggest_employees(
     # Use the pre-built employee_list and locally calculate pricing
     employees = employee_list
     if not employees:
-        return (
-            f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}."
-        )
+        return f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}."
 
     pricing_total = booking_tool.calculate_total_price(
         ctx.selected_services_pm_si or []
@@ -266,7 +264,9 @@ async def create_booking(
             # Update context to mark booking as confirmed
             ctx.booking_confirmed = True
             ctx.booking_in_progress = False
-            ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_EMPLOYEE][0]
+            ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[
+                BookingStep.SELECT_EMPLOYEE
+            ][0]
 
         # Return the full booking result without modification
         return json.dumps(result, ensure_ascii=False)
@@ -296,7 +296,7 @@ async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> str:
     return "تم إعادة تعيين عملية الحجز. يمكنك البدء من جديد! 😊"
 
 
-@function_tool
+@function_tool()
 async def update_booking_context(
     wrapper: RunContextWrapper[BookingContext], updates: Dict[str, Any]
 ) -> str:
@@ -335,10 +335,7 @@ async def update_booking_context(
 
     invalid_fields = [name for name in updates if not hasattr(ctx, name)]
     if invalid_fields:
-        return (
-            "عذراً، الحقول التالية غير معروفة: "
-            + ", ".join(invalid_fields)
-        )
+        return "عذراً، الحقول التالية غير معروفة: " + ", ".join(invalid_fields)
 
     for name, value in updates.items():
         if name == "next_booking_step" and value is not None:
