@@ -136,7 +136,6 @@ async def check_availability(
         patch = {
             "appointment_date": date,
             "available_times": slots,
-            "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0],
         }
 
         return ToolResult(public_text=text, ctx_patch=patch, private_data=slots, version=ctx.version)
