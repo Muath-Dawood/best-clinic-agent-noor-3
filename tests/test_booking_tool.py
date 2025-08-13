@@ -1,6 +1,8 @@
+import datetime as dt
 import httpx
 import pytest
 
+import src.tools.booking_tool as booking_tool_module
 from src.tools.booking_tool import booking_tool, BookingFlowError
 
 
@@ -62,3 +64,35 @@ async def test_create_booking_failure(monkeypatch):
         )
 
     assert "API error" in str(exc.value)
+
+
+def test_parse_natural_date_rolls_over_past_weekday(monkeypatch):
+    class FixedDateTime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2024, 1, 1, tzinfo=tz)
+
+    def fake_parse(text, settings=None, languages=None):
+        return dt.datetime(2023, 12, 31)
+
+    monkeypatch.setattr(booking_tool_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(booking_tool_module, "parse_date", fake_parse)
+
+    result = booking_tool.parse_natural_date("Sunday", "en")
+    assert result == "2024-01-07"
+
+
+def test_parse_natural_date_returns_none_for_past_date(monkeypatch):
+    class FixedDateTime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2024, 1, 1, tzinfo=tz)
+
+    def fake_parse(text, settings=None, languages=None):
+        return dt.datetime(2023, 12, 31)
+
+    monkeypatch.setattr(booking_tool_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(booking_tool_module, "parse_date", fake_parse)
+
+    result = booking_tool.parse_natural_date("2023-12-31", "en")
+    assert result is None

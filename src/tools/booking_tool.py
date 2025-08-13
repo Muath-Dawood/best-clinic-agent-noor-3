@@ -6,9 +6,12 @@ This tool manages the complete booking flow while keeping Noor's responses natur
 from typing import List, Dict, Optional, Tuple
 import logging
 
+from datetime import datetime, timedelta
+
 import httpx
 from dateparser import parse as parse_date
 
+from src.app.session_memory import tz
 from src.data.services import (
     get_services_by_gender,
     get_cus_sec_pm_si_by_gender,
@@ -105,19 +108,62 @@ class BookingTool:
             raise BookingFlowError(f"API call failed: {str(e)}")
 
     def parse_natural_date(self, text: str, language: str = "ar") -> Optional[str]:
-        """Parse natural language dates like 'بعد ٣ أيام' or 'next Sunday'."""
+        """Parse natural language dates like 'بعد ٣ أيام' or 'next Sunday'.
+
+        If the parsed result falls before today's date, the next logical
+        occurrence is returned for day-of-week phrases. Otherwise, the method
+        returns ``None`` when no future date makes sense (e.g., "yesterday").
+        """
+
         try:
-            # Set language for dateparser
             settings = {"PREFER_DATES_FROM": "future"}
             if language == "ar":
                 settings["PREFER_DAY_OF_MONTH"] = "first"
 
-            parsed_date = parse_date(text, settings=settings)
-            if parsed_date:
-                return parsed_date.strftime("%Y-%m-%d")
+            parsed_date = parse_date(text, settings=settings, languages=[language])
+            if not parsed_date:
+                return None
+
+            # Normalize parsed date to configured timezone
+            if parsed_date.tzinfo is None:
+                parsed_date = tz.localize(parsed_date)
+            else:
+                parsed_date = parsed_date.astimezone(tz)
+
+            today = datetime.now(tz).date()
+            result_date = parsed_date.date()
+
+            if result_date < today:
+                lowered = text.strip().lower()
+                weekday_keywords = {
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                    "الاثنين",
+                    "الإثنين",
+                    "الثلاثاء",
+                    "الأربعاء",
+                    "الاربعاء",
+                    "الخميس",
+                    "الجمعة",
+                    "السبت",
+                    "الأحد",
+                    "الاحد",
+                }
+                if any(day in lowered for day in weekday_keywords):
+                    while result_date <= today:
+                        result_date += timedelta(days=7)
+                    return result_date.strftime("%Y-%m-%d")
+                return None
+
+            return result_date.strftime("%Y-%m-%d")
+
         except Exception:
-            pass
-        return None
+            return None
 
     def parse_natural_time(self, text: str) -> Optional[str]:
         """Parse natural language times like 'صباحاً' or 'morning'."""
