@@ -81,6 +81,12 @@ async def test_update_booking_context_invalidates_downstream():
     payload = json.dumps({"updates": updates.model_dump()})
     result = await update_booking_context.on_invoke_tool(wrapper, payload)
     StepController(ctx).apply_patch(result.ctx_patch)
+    assert ctx.available_times is None
     assert ctx.appointment_time is None
     assert ctx.employee_pm_si is None
+    assert ctx.offered_employees is None
+    assert ctx.checkout_summary is None
+    assert "الأوقات المتاحة" in result.public_text
+    assert "الأطباء المقترحين" in result.public_text
+    assert "ملخص الحجز" in result.public_text
     assert "اختيار الوقت والطبيب" in result.public_text

@@ -494,9 +494,17 @@ async def update_booking_context(
     controller = StepController(ctx)
     start_version = ctx.version
     msg_map = {
-        BookingStep.SELECT_SERVICE: "تم تحديث الخدمات. يرجى اختيار التاريخ، الوقت، والطبيب من جديد.",
-        BookingStep.SELECT_DATE: "تم تحديث التاريخ. يرجى اختيار الوقت والطبيب من جديد.",
-        BookingStep.SELECT_TIME: "تم تحديث الوقت. يرجى اختيار الطبيب من جديد.",
+        BookingStep.SELECT_SERVICE: (
+            "تم تحديث الخدمات. تم مسح الأوقات المتاحة، الأطباء المقترحين، وملخص الحجز. "
+            "يرجى اختيار التاريخ، الوقت، والطبيب من جديد."
+        ),
+        BookingStep.SELECT_DATE: (
+            "تم تحديث التاريخ. تم مسح الأوقات المتاحة، الأطباء المقترحين، وملخص الحجز. "
+            "يرجى اختيار الوقت والطبيب من جديد."
+        ),
+        BookingStep.SELECT_TIME: (
+            "تم تحديث الوقت. تم مسح الأطباء المقترحين وملخص الحجز. يرجى اختيار الطبيب من جديد."
+        ),
     }
     for field in ["selected_services_pm_si", "appointment_date", "appointment_time"]:
         if field in updates_dict and getattr(ctx, field) != updates_dict[field]:
