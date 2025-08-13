@@ -36,7 +36,11 @@ def _dynamic_footer(ctx: BookingContext) -> str:
 
 def _build_noor_agent(ctx: BookingContext) -> Agent:
     instructions = SYSTEM_PROMPT + "\n\n" + _dynamic_footer(ctx)
-    tools = [update_booking_context, kb_tool_for_noor(), booking_tool_for_noor()]
+    # kb_tool_for_noor() and booking_tool_for_noor() each return a list of tools.
+    # If we naively append them, Agent.tools would contain nested lists, which breaks
+    # the Runner (it expects each element to be a Tool with a ``name`` attribute).
+    # Flatten the lists so that ``Agent`` receives a simple list of Tool objects.
+    tools = [update_booking_context] + kb_tool_for_noor() + booking_tool_for_noor()
 
     return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
 
