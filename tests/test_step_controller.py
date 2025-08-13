@@ -138,6 +138,7 @@ async def test_check_availability_stores_available_times(monkeypatch):
 
     payload = json.dumps({"date": "2024-06-01"})
     result = await check_availability.on_invoke_tool(wrapper, payload)
+    assert "next_booking_step" not in result.ctx_patch
     StepController(ctx).apply_patch(result.ctx_patch)
     assert ctx.available_times == slots
     assert ctx.next_booking_step == BookingStep.SELECT_TIME
