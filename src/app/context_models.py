@@ -65,3 +65,6 @@ class BookingContext:
     next_booking_step: Optional[BookingStep] = None  # what Noor should ask next
     pending_questions: Optional[List[str]] = None  # questions Noor needs to ask
 
+    # versioning
+    version: int = 0  # incremented on each context update
+
