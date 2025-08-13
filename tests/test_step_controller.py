@@ -32,7 +32,12 @@ def test_apply_patch_sets_next_step():
     controller = StepController(ctx)
     controller.apply_patch({"selected_services_pm_si": ["svc1"], "next_booking_step": BookingStep.SELECT_EMPLOYEE})
     assert ctx.next_booking_step == BookingStep.SELECT_DATE
-    controller.apply_patch({"appointment_date": "2024-06-01"})
+    controller.apply_patch(
+        {
+            "appointment_date": "2024-06-01",
+            "available_times": [{"time": "09:00"}],
+        }
+    )
     assert ctx.next_booking_step == BookingStep.SELECT_TIME
 
 
