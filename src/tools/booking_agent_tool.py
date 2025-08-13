@@ -3,8 +3,9 @@ Booking Agent Tool - provides functional tools for Noor to handle appointment bo
 Uses the correct @function_tool pattern from Agents SDK.
 """
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 import json
+from pydantic import BaseModel, ConfigDict
 from agents import Agent, function_tool, RunContextWrapper
 
 from src.tools.booking_tool import booking_tool, BookingFlowError
@@ -22,6 +23,20 @@ employee_list: List[Dict[str, str]] = [
     {"pm_si": "emp_ahmad", "name": "Dr. Ahmad"},
     {"pm_si": "emp_sara", "name": "Dr. Sara"},
 ]
+
+
+class BookingContextUpdate(BaseModel):
+    """Subset of :class:`BookingContext` fields that can be updated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected_services_pm_si: Optional[List[str]] = None
+    appointment_date: Optional[str] = None
+    appointment_time: Optional[str] = None
+    employee_pm_si: Optional[str] = None
+    employee_name: Optional[str] = None
+    gender: Optional[str] = None
+    next_booking_step: Optional[BookingStep] = None
 
 
 def _validate_step(
@@ -298,13 +313,13 @@ async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> str:
 
 @function_tool()
 async def update_booking_context(
-    wrapper: RunContextWrapper[BookingContext], updates: Dict[str, Any]
+    wrapper: RunContextWrapper[BookingContext], updates: BookingContextUpdate
 ) -> str:
     """Update fields in the booking context.
 
     Args:
-        updates: Mapping of field names to new values. Keys should match
-            attributes on :class:`BookingContext`. Common keys and formats:
+        updates: Fields to update. All attributes are optional and correspond to
+            those on :class:`BookingContext`:
 
             * ``selected_services_pm_si`` (``List[str]``): service tokens to
               reserve. Example: ``["svc123", "svc456"]``.
@@ -316,36 +331,26 @@ async def update_booking_context(
             * ``next_booking_step`` (``BookingStep``): upcoming workflow step.
 
     Examples:
-        >>> await update_booking_context(wrapper, {
-        ...     "selected_services_pm_si": ["svc123", "svc456"],  # service_tokens
-        ... })
-        >>> await update_booking_context(wrapper, {
-        ...     "employee_pm_si": "emp789",                        # employee_token
-        ...     "employee_name": "Dr. Noor",
-        ... })
-        >>> await update_booking_context(wrapper, {
-        ...     "appointment_date": "2024-06-01",
-        ...     "appointment_time": "14:30",
-        ... })
+        >>> await update_booking_context(wrapper, BookingContextUpdate(
+        ...     selected_services_pm_si=["svc123", "svc456"],
+        ... ))
+        >>> await update_booking_context(wrapper, BookingContextUpdate(
+        ...     employee_pm_si="emp789", employee_name="Dr. Noor",
+        ... ))
+        >>> await update_booking_context(wrapper, BookingContextUpdate(
+        ...     appointment_date="2024-06-01", appointment_time="14:30",
+        ... ))
     """
     ctx = wrapper.context
 
-    if not updates:
+    updates_dict = updates.model_dump(exclude_none=True)
+    if not updates_dict:
         return "لم يتم تقديم أي تحديثات."
 
-    invalid_fields = [name for name in updates if not hasattr(ctx, name)]
-    if invalid_fields:
-        return "عذراً، الحقول التالية غير معروفة: " + ", ".join(invalid_fields)
-
-    for name, value in updates.items():
-        if name == "next_booking_step" and value is not None:
-            try:
-                value = value if isinstance(value, BookingStep) else BookingStep(value)
-            except ValueError:
-                return "عذراً، خطوة الحجز غير معروفة."
+    for name, value in updates_dict.items():
         setattr(ctx, name, value)
 
-    return "تم تحديث الحقول: " + ", ".join(updates.keys())
+    return "تم تحديث الحقول: " + ", ".join(updates_dict.keys())
 
 
 # The mini-agent that owns the booking tools (Noor won't see the complex API calls directly)
