@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 class BookingStep(str, Enum):
@@ -32,7 +33,7 @@ class BookingContext:
     user_phone: Optional[str] = None
     user_lang: Optional[str] = None
     tz: str = "Asia/Hebron"
-    current_datetime: Optional[str] = datetime.now(timezone("Asia/Hebron")).strftime(
+    current_datetime: Optional[str] = datetime.now(ZoneInfo("Asia/Hebron")).strftime(
         "%Y-%m-%dT%H:%M:%S%z"
     )  # ISO format
 
