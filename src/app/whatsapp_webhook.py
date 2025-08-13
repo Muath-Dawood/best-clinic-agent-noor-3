@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import os
+import hmac
 import httpx
 from fastapi import APIRouter, Request, Response, status
 from agents import SQLiteSession
@@ -25,6 +26,8 @@ GREEN_URL = (
     f"https://7105.api.greenapi.com/waInstance{GREEN_ID}/sendMessage/{GREEN_TOKEN}"
 )
 
+WEBHOOK_TOKEN = os.getenv("WA_WEBHOOK_TOKEN", "").strip()
+
 logger = get_logger("noor.webhook")
 
 
@@ -45,6 +48,12 @@ def fire_and_forget_send(chat_id: str, text: str) -> None:
 
 @router.post("/wa")
 async def receive_wa(request: Request) -> Response:
+    token = request.headers.get("X-WA-TOKEN", "")
+    if not WEBHOOK_TOKEN or not hmac.compare_digest(token, WEBHOOK_TOKEN):
+        client_host = request.client.host if request.client else "unknown"
+        logger.warning(f"Unauthorized webhook call from {client_host}")
+        return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+
     try:
         body = await request.json()
     except Exception:
