@@ -9,18 +9,20 @@ from pydantic import BaseModel, ConfigDict
 from agents import function_tool, RunContextWrapper
 
 from src.tools.booking_tool import booking_tool, BookingFlowError
-from src.data.services import get_services_by_gender
+from src.data.services import get_services_by_gender, get_service_summary
 from src.app.context_models import (
     BookingContext,
     BookingStep,
-    BOOKING_STEP_TRANSITIONS,
 )
 from src.tools.tool_result import ToolResult
 from src.workflows.step_controller import StepController
 
 
 class BookingContextUpdate(BaseModel):
-    """Subset of :class:`BookingContext` fields that can be updated."""
+    """Subset of :class:`BookingContext` fields that can be updated.
+
+    Note: ``next_booking_step`` is computed by the server and ignored if provided.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -30,7 +32,7 @@ class BookingContextUpdate(BaseModel):
     employee_pm_si: Optional[str] = None
     employee_name: Optional[str] = None
     gender: Optional[str] = None
-    next_booking_step: Optional[BookingStep] = None
+    next_booking_step: Optional[BookingStep] = None  # ignored
 
 
 def _validate_step(
@@ -74,13 +76,10 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
                 version=ctx.version,
             )
 
-        patch = {
-            "selected_services_data": services,
-            "next_booking_step": BOOKING_STEP_TRANSITIONS[None][0],
-        }
-
+        patch = {"selected_services_data": services}
+        human = get_service_summary(services, ctx)
         return ToolResult(
-            public_text=json.dumps(services, ensure_ascii=False),
+            public_text=human,
             ctx_patch=patch,
             private_data=services,
             version=ctx.version,
@@ -123,7 +122,7 @@ async def check_availability(
         if not slots:
             return ToolResult(
                 public_text=f"عذراً، لا توجد أوقات متاحة في تاريخ {date}.",
-                ctx_patch={},
+                ctx_patch={"available_times": None},
                 version=ctx.version,
             )
 
@@ -211,7 +210,6 @@ async def suggest_employees(
         "appointment_time": time,
         "offered_employees": employees,
         "checkout_summary": checkout_summary,
-        "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_TIME][0],
     }
 
     message_data = {"employees": employees, "checkout_summary": checkout_summary}
@@ -287,7 +285,6 @@ async def create_booking(
                     "offered_employees": None,
                     "checkout_summary": None,
                     "available_times": slots,
-                    "next_booking_step": BookingStep.SELECT_TIME,
                 }
             )
             return ToolResult(
@@ -320,9 +317,9 @@ async def create_booking(
         }
 
     chat_id = getattr(ctx, "chat_id", "")
+    services_key = ",".join(sorted(ctx.selected_services_pm_si or []))
     idempotency_key = (
-        f"{chat_id}-{ctx.appointment_date}-{ctx.appointment_time}-"
-        f"{employee_pm_si}-{hash(tuple(ctx.selected_services_pm_si))}"
+        f"{chat_id}-{ctx.appointment_date}-{ctx.appointment_time}-{employee_pm_si}-{services_key}"
     )
 
     try:
@@ -341,7 +338,6 @@ async def create_booking(
                 {
                     "booking_confirmed": True,
                     "booking_in_progress": False,
-                    "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_EMPLOYEE][0],
                 }
             )
 
@@ -364,7 +360,6 @@ async def create_booking(
                     "offered_employees": None,
                     "checkout_summary": None,
                     "available_times": slots,
-                    "next_booking_step": BookingStep.SELECT_TIME,
                 }
             )
             return ToolResult(
@@ -463,7 +458,7 @@ async def update_booking_context(
             * ``employee_pm_si`` (``str``): token of the chosen employee.
             * ``employee_name`` (``str``): human-readable employee name.
             * ``gender`` (``str``): ``"male"`` or ``"female"``.
-            * ``next_booking_step`` (``BookingStep``): upcoming workflow step.
+            * ``next_booking_step`` (``BookingStep``): ignored (server computes this).
 
     Examples:
         >>> await update_booking_context(wrapper, BookingContextUpdate(

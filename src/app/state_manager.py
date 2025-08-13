@@ -17,7 +17,20 @@ from typing import Optional, Tuple
 
 from agents import SQLiteSession
 
-from .context_models import BookingContext
+from .context_models import BookingContext, BookingStep
+
+
+def _coerce_enums(obj):
+    """Recursively convert Enums (e.g., BookingStep) to raw values for JSON."""
+    from enum import Enum
+
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, dict):
+        return {k: _coerce_enums(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_coerce_enums(v) for v in obj]
+    return obj
 
 # Path to the SQLite file used to persist state
 STATE_DB = "state.db"
@@ -69,7 +82,14 @@ async def get_state(
     if ctx_json is None:
         return None
 
-    ctx = BookingContext(**json.loads(ctx_json))
+    data = json.loads(ctx_json)
+    step = data.get("next_booking_step")
+    if isinstance(step, str):
+        try:
+            data["next_booking_step"] = BookingStep(step)
+        except Exception:
+            data["next_booking_step"] = None
+    ctx = BookingContext(**data)
     session = SQLiteSession(user_id, "noor_sessions.db")
     return ctx, session
 
@@ -79,7 +99,7 @@ async def touch_state(
 ) -> None:
     """Persist ``ctx`` for ``user_id``."""
     await _ensure_table()
-    ctx_json = json.dumps(asdict(ctx))
+    ctx_json = json.dumps(_coerce_enums(asdict(ctx)))
 
     async with _lock:
         def _write() -> None:
