@@ -4,10 +4,11 @@ Uses the correct @function_tool pattern from Agents SDK.
 """
 
 from typing import List, Dict, Optional, Any
+import json
 from agents import Agent, function_tool, RunContextWrapper
 
 from src.tools.booking_tool import booking_tool, BookingFlowError
-from src.data.services import get_services_by_gender, get_service_summary
+from src.data.services import get_services_by_gender
 from src.app.context_models import BookingContext
 
 
@@ -40,7 +41,8 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> str:
         ctx.selected_services_data = services
         ctx.next_booking_step = "select_service"
 
-        return get_service_summary(services)
+        # Return raw services data without modification
+        return json.dumps(services, ensure_ascii=False)
     except Exception as e:
         return f"عذراً، حدث خطأ في جلب الخدمات: {str(e)}"
 
@@ -65,22 +67,8 @@ async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> str:
         # Update context with available dates
         ctx.next_booking_step = "select_date"
 
-        # Format dates nicely
-        formatted_dates = []
-        for date in dates[:5]:  # Show max 5 dates
-            try:
-                from datetime import datetime
-
-                dt = datetime.strptime(date, "%Y-%m-%d")
-                formatted_dates.append(
-                    dt.strftime("%A %d %B" if "ar" in gender else "%A %B %d")
-                )
-            except:
-                formatted_dates.append(date)
-
-        return f"المواعيد المتاحة:\n" + "\n".join(
-            [f"• {date}" for date in formatted_dates]
-        )
+        # Return raw dates exactly as received
+        return json.dumps(dates, ensure_ascii=False)
     except BookingFlowError as e:
         return f"عذراً، حدث خطأ في فحص التوفر: {str(e)}"
 
@@ -113,22 +101,8 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
         ctx.appointment_date = date
         ctx.next_booking_step = "select_time"
 
-        # Format times nicely
-        formatted_times = []
-        for time in times[:8]:  # Show max 8 times
-            try:
-                from datetime import datetime
-
-                dt = datetime.strptime(time, "%H:%M")
-                formatted_times.append(
-                    dt.strftime("%I:%M %p" if "en" in gender else "%H:%M")
-                )
-            except:
-                formatted_times.append(time)
-
-        return f"الأوقات المتاحة في {date}:\n" + "\n".join(
-            [f"• {time}" for time in formatted_times]
-        )
+        # Return raw times exactly as received
+        return json.dumps(times, ensure_ascii=False)
     except BookingFlowError as e:
         return f"عذراً، حدث خطأ في فحص الأوقات: {str(e)}"
 
@@ -170,23 +144,8 @@ async def suggest_employees(
         ctx.next_booking_step = "select_employee"
         ctx.total_price = float(pricing.get("full_total", 0))
 
-        # Format employee list
-        employee_list = []
-        for emp in employees:
-            status = (
-                "متاح" if emp.get("employee_work_status") == "available" else "غير متاح"
-            )
-            employee_list.append(f"• {emp.get('name', 'غير محدد')} - {status}")
-
-        # Add pricing info
-        total = pricing.get("full_total", "غير محدد")
-
-        response = f"الأطباء المتاحون:\n" + "\n".join(
-            [f"• {emp.get('name', 'غير محدد')} - {status}" for emp in employees]
-        )
-        response += f"\n\n💰 السعر الإجمالي: {total} د.ك"
-
-        return response
+        # Return employees and pricing exactly as received
+        return json.dumps({"employees": employees, "pricing": pricing}, ensure_ascii=False)
     except BookingFlowError as e:
         return f"عذراً، حدث خطأ في فحص الأطباء: {str(e)}"
 
@@ -249,9 +208,8 @@ async def create_booking(
             ctx.booking_in_progress = False
             ctx.next_booking_step = None
 
-            return f"✅ تم الحجز بنجاح!\n\n{result.get('message', '')}"
-        else:
-            return f"عذراً، فشل في إنشاء الحجز: {result.get('message', 'خطأ غير معروف')}"
+        # Return the full booking result without modification
+        return json.dumps(result, ensure_ascii=False)
 
     except BookingFlowError as e:
         return f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}"
@@ -332,16 +290,17 @@ async def update_booking_context(
 _booking_agent = Agent(
     name="BookingAgent",
     instructions=(
-        "You are a booking assistant for Best Clinic 24. Your job is to help users book appointments "
-        "by understanding their requests and using the available tools intelligently.\n\n"
+        "You are a booking assistant for Best Clinic 24. Help users book appointments by "
+        "understanding their requests and using the tools.\n\n"
         "RULES:\n"
-        "- Always respond in the user's language (Arabic or English)\n"
-        "- Be helpful and conversational, not robotic\n"
-        "- When suggesting dates/times, offer 2-3 options if available\n"
-        "- If only one option is available, explain why and suggest it\n"
-        "- Always confirm the final booking details before proceeding\n"
-        "- Handle errors gracefully and suggest alternatives\n"
-        "- Never mention technical details like API calls or tokens\n\n"
+        "- Converse in the user's language (Arabic or English).\n"
+        "- When you call a tool, return its output verbatim, including IDs or tokens. Do not translate, "
+        "  summarize, or drop fields.\n"
+        "- Outside of raw tool output, stay warm, helpful, and conversational.\n"
+        "- When suggesting dates or times, offer 2-3 options if available; if only one exists, explain why.\n"
+        "- Confirm all booking details before creating a booking.\n"
+        "- Handle errors gracefully and suggest alternatives.\n"
+        "- Avoid commentary about APIs or tools—just show the raw output when relevant.\n\n"
         "AVAILABLE TOOLS:\n"
         "- suggest_services: Show available services for a gender\n"
         "- check_availability: Check available dates for selected services\n"
