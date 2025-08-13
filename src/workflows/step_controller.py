@@ -80,6 +80,17 @@ class StepController:
         BookingStep.SELECT_EMPLOYEE,
     ]
 
+    _STEP_PREREQS: Dict[BookingStep, list[str]] = {
+        BookingStep.SELECT_SERVICE: [],
+        BookingStep.SELECT_DATE: ["selected_services_pm_si"],
+        BookingStep.SELECT_TIME: ["selected_services_pm_si", "appointment_date"],
+        BookingStep.SELECT_EMPLOYEE: [
+            "selected_services_pm_si",
+            "appointment_date",
+            "appointment_time",
+        ],
+    }
+
     def __init__(self, ctx: BookingContext) -> None:
         self.ctx = ctx
         self._history: Dict[int, BookingContext] = {ctx.version: deepcopy(ctx)}
@@ -104,16 +115,51 @@ class StepController:
         return None
 
     # ------------------------------------------------------------------
+    def _compute_next_step(self) -> Optional[BookingStep]:
+        if not self.ctx.selected_services_pm_si:
+            return BookingStep.SELECT_SERVICE
+        if not self.ctx.appointment_date:
+            return BookingStep.SELECT_DATE
+        if not self.ctx.appointment_time:
+            return BookingStep.SELECT_TIME
+        if not self.ctx.employee_pm_si:
+            return BookingStep.SELECT_EMPLOYEE
+        return None
+
+    # ------------------------------------------------------------------
+    def _validate_prereqs(self, patch: Dict[str, Any]) -> None:
+        combined: Dict[str, Any] = asdict(self.ctx)
+        combined.update({k: v for k, v in patch.items() if k != "next_booking_step"})
+        for name in patch:
+            step = self._FIELD_TO_STEP.get(name)
+            if step is None:
+                continue
+            for req in self._STEP_PREREQS.get(step, []):
+                if not combined.get(req):
+                    raise ValueError(
+                        f"Cannot set '{name}' before '{req}' is provided"
+                    )
+
+    # ------------------------------------------------------------------
     def apply_patch(self, patch: Dict[str, Any], *, invalidate: bool = True) -> None:
         """Apply ``patch`` to the context and record a new version."""
 
+        patch = {k: v for k, v in patch.items() if k != "next_booking_step"}
+
+        if not patch:
+            self.ctx.next_booking_step = self._compute_next_step()
+            return
+
         if invalidate:
+            self._validate_prereqs(patch)
             step = self._derive_step_from_patch(patch)
             if step is not None:
                 self.invalidate_downstream_fields(step)
 
         for name, value in patch.items():
             setattr(self.ctx, name, value)
+
+        self.ctx.next_booking_step = self._compute_next_step()
 
         self.ctx.version += 1
         self._history[self.ctx.version] = deepcopy(self.ctx)

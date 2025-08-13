@@ -390,6 +390,11 @@ async def update_booking_context(
     if not updates_dict:
         return ToolResult(public_text="لم يتم تقديم أي تحديثات.", ctx_patch={})
 
+    if "next_booking_step" in updates_dict:
+        return ToolResult(
+            public_text="لا يمكن تعديل خطوة الحجز التالية مباشرة.", ctx_patch={}
+        )
+
     return ToolResult(
         public_text="تم تحديث الحقول: " + ", ".join(updates_dict.keys()),
         ctx_patch=updates_dict,
