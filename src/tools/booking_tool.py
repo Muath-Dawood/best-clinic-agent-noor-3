@@ -4,6 +4,8 @@ This tool manages the complete booking flow while keeping Noor's responses natur
 """
 
 from typing import List, Dict, Optional, Tuple
+import logging
+
 import httpx
 from dateparser import parse as parse_date
 
@@ -12,6 +14,9 @@ from src.data.services import (
     get_cus_sec_pm_si_by_gender,
     find_service_by_pm_si,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class BookingFlowError(Exception):
@@ -74,11 +79,13 @@ class BookingTool:
                 result = response.json()
 
                 if not result.get("result"):
-                    print("--- FULL API RESPONSE ---")
-                    print(result)
-                    print("-------------------------")
+                    sanitized_result = {
+                        k: "[REDACTED]" if k in {"cus_sec_pm_si", "token"} else v
+                        for k, v in result.items()
+                    }
+                    logger.error("Full API response: %s", sanitized_result)
                     raise BookingFlowError(
-                        f"API error: {result.get('message', 'Unknown error')} | Full response: {result}"
+                        f"API error: {result.get('message', 'Unknown error')} | Full response: {sanitized_result}"
                     )
 
                 return result
