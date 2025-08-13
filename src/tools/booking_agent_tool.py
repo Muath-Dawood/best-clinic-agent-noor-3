@@ -402,16 +402,3 @@ def booking_tool_for_noor():
             ),
         )
     ]
-
-
-def update_context_tool_for_noor():
-    """Expose update_booking_context directly for Noor."""
-    return [
-        update_booking_context.as_tool(
-            tool_name="update_booking_context",
-            tool_description=(
-                "Update booking context fields (selected services, date, time, employee, gender, step, etc.). "
-                "Call this whenever booking info changes before using the booking tool."
-            ),
-        )
-    ]

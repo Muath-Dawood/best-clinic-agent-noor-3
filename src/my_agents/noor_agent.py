@@ -3,7 +3,7 @@ from src.my_agents.prompts.system_prompt_noor import SYSTEM_PROMPT
 from src.tools.kb_agent_tool import kb_tool_for_noor
 from src.tools.booking_agent_tool import (
     booking_tool_for_noor,
-    update_context_tool_for_noor,
+    update_booking_context,
 )
 from src.app.context_models import BookingContext
 from src.app.output_sanitizer import redact_tokens
@@ -38,7 +38,7 @@ def _build_noor_agent(ctx: BookingContext) -> Agent:
     instructions = SYSTEM_PROMPT + "\n\n" + _dynamic_footer(ctx)
     tools = []
     tools += kb_tool_for_noor()
-    tools += update_context_tool_for_noor()  # Allow context updates
+    tools += update_booking_context  # Allow context updates
     tools += booking_tool_for_noor()  # Add booking capabilities
 
     return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
