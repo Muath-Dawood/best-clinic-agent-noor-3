@@ -34,10 +34,13 @@ class StepController:
         "selected_services_pm_si": BookingStep.SELECT_SERVICE,
         "selected_services_data": BookingStep.SELECT_SERVICE,
         "appointment_date": BookingStep.SELECT_DATE,
+        "available_times": BookingStep.SELECT_DATE,
         "appointment_time": BookingStep.SELECT_TIME,
         "total_price": BookingStep.SELECT_TIME,
         "employee_pm_si": BookingStep.SELECT_EMPLOYEE,
         "employee_name": BookingStep.SELECT_EMPLOYEE,
+        "offered_employees": BookingStep.SELECT_EMPLOYEE,
+        "checkout_summary": BookingStep.SELECT_EMPLOYEE,
         "booking_confirmed": BookingStep.SELECT_EMPLOYEE,
     }
 
@@ -46,30 +49,41 @@ class StepController:
             "selected_services_pm_si",
             "selected_services_data",
             "appointment_date",
+            "available_times",
             "appointment_time",
             "total_price",
             "employee_pm_si",
             "employee_name",
+            "offered_employees",
+            "checkout_summary",
             "booking_confirmed",
         ],
         BookingStep.SELECT_DATE: [
             "appointment_date",
+            "available_times",
             "appointment_time",
             "total_price",
             "employee_pm_si",
             "employee_name",
+            "offered_employees",
+            "checkout_summary",
             "booking_confirmed",
         ],
         BookingStep.SELECT_TIME: [
+            "available_times",
             "appointment_time",
             "total_price",
             "employee_pm_si",
             "employee_name",
+            "offered_employees",
+            "checkout_summary",
             "booking_confirmed",
         ],
         BookingStep.SELECT_EMPLOYEE: [
             "employee_pm_si",
             "employee_name",
+            "offered_employees",
+            "checkout_summary",
             "booking_confirmed",
         ],
     }
@@ -84,11 +98,16 @@ class StepController:
     _STEP_PREREQS: Dict[BookingStep, list[str]] = {
         BookingStep.SELECT_SERVICE: [],
         BookingStep.SELECT_DATE: ["selected_services_pm_si"],
-        BookingStep.SELECT_TIME: ["selected_services_pm_si", "appointment_date"],
+        BookingStep.SELECT_TIME: [
+            "selected_services_pm_si",
+            "appointment_date",
+            "available_times",
+        ],
         BookingStep.SELECT_EMPLOYEE: [
             "selected_services_pm_si",
             "appointment_date",
             "appointment_time",
+            "available_times",
         ],
     }
 
@@ -121,7 +140,13 @@ class StepController:
             return BookingStep.SELECT_SERVICE
         if not self.ctx.appointment_date:
             return BookingStep.SELECT_DATE
+        if not self.ctx.available_times:
+            return BookingStep.SELECT_DATE
         if not self.ctx.appointment_time:
+            return BookingStep.SELECT_TIME
+        if self.ctx.available_times and self.ctx.appointment_time not in {
+            t.get("time") for t in self.ctx.available_times
+        }:
             return BookingStep.SELECT_TIME
         if not self.ctx.employee_pm_si:
             return BookingStep.SELECT_EMPLOYEE
@@ -131,7 +156,7 @@ class StepController:
     def _validate_prereqs(self, patch: Dict[str, Any]) -> None:
         combined: Dict[str, Any] = asdict(self.ctx)
         combined.update({k: v for k, v in patch.items() if k != "next_booking_step"})
-        for name in patch:
+        for name, value in patch.items():
             step = self._FIELD_TO_STEP.get(name)
             if step is None:
                 continue
@@ -139,6 +164,12 @@ class StepController:
                 if not combined.get(req):
                     raise ValueError(
                         f"Cannot set '{name}' before '{req}' is provided"
+                    )
+            if name == "appointment_time" and combined.get("available_times"):
+                times = {t.get("time") for t in combined["available_times"]}
+                if value not in times:
+                    raise ValueError(
+                        f"Cannot set 'appointment_time' to unavailable time '{value}'"
                     )
 
     # ------------------------------------------------------------------
