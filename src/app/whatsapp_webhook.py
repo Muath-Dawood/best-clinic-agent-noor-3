@@ -32,11 +32,35 @@ async def _send_whatsapp(chat_id: str, text: str) -> None:
     if not (GREEN_ID and GREEN_TOKEN):
         logger.warning("Skipping WhatsApp send: WA env not configured")
         return
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(GREEN_URL, json={"chatId": chat_id, "message": text})
-    except Exception as e:
-        logger.error(f"WhatsApp send failed: {e}")
+    retries = 3
+    backoff = 1
+    async with httpx.AsyncClient(timeout=10) as client:
+        for attempt in range(1, retries + 1):
+            try:
+                resp = await client.post(
+                    GREEN_URL, json={"chatId": chat_id, "message": text}
+                )
+                if 200 <= resp.status_code < 300:
+                    return
+                # Non-2xx response: log body and status
+                logger.error(
+                    "WhatsApp send failed: status=%s body=%s",
+                    resp.status_code,
+                    resp.text,
+                )
+                if resp.status_code in {429} or resp.status_code >= 500:
+                    if attempt < retries:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                return
+            except Exception as e:
+                logger.error(f"WhatsApp send failed: {e}")
+                if attempt < retries:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                return
 
 
 def fire_and_forget_send(chat_id: str, text: str) -> None:
