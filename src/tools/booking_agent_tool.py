@@ -34,10 +34,10 @@ class BookingContextUpdate(BaseModel):
 
 
 def _validate_step(
-    ctx: BookingContext, expected: Optional[BookingStep]
+    ctx: BookingContext, *allowed: Optional[BookingStep]
 ) -> Optional[str]:
-    """Ensure the booking flow is in the expected step."""
-    if ctx.next_booking_step != expected:
+    """Ensure the booking flow is currently in one of ``allowed`` steps."""
+    if ctx.next_booking_step not in allowed:
         return "عذراً، لا يمكن تنفيذ هذه الخطوة الآن."
     return None
 
@@ -59,7 +59,7 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
     """Show available services based on the user's gender preference."""
     ctx = wrapper.context
 
-    error = _validate_step(ctx, None)
+    error = _validate_step(ctx, None, BookingStep.SELECT_SERVICE)
     if error:
         return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
