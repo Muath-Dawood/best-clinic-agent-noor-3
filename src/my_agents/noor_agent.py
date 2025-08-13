@@ -4,7 +4,6 @@ from src.tools.kb_agent_tool import kb_tool_for_noor
 from src.tools.booking_agent_tool import (
     suggest_services,
     check_availability,
-    suggest_times,
     suggest_employees,
     create_booking,
     reset_booking,
@@ -52,7 +51,6 @@ def _build_noor_agent(ctx: BookingContext) -> Agent:
         *kb_tool_for_noor(),
         suggest_services,
         check_availability,
-        suggest_times,
         suggest_employees,
         create_booking,
         reset_booking,

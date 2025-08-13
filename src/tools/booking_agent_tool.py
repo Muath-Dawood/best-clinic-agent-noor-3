@@ -99,55 +99,11 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
 
 
 @function_tool
-async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
-    """Check available dates for selected services."""
-    ctx = wrapper.context
+async def check_availability(
+    wrapper: RunContextWrapper[BookingContext], date: str
+) -> ToolResult:
+    """Get available times for a specific date."""
 
-    error = _validate_step(ctx, BookingStep.SELECT_SERVICE)
-    if error:
-        return ToolResult(public_text=error, ctx_patch={})
-
-    if not ctx.selected_services_pm_si:
-        return ToolResult(
-            public_text="عذراً، يجب اختيار الخدمات أولاً قبل فحص التوفر.",
-            ctx_patch={},
-        )
-
-    gender = ctx.gender or "male"
-
-    try:
-        dates = await booking_tool.get_available_dates(
-            ctx.selected_services_pm_si, gender
-        )
-        if not dates:
-            return ToolResult(
-                public_text="عذراً، لا توجد مواعيد متاحة للخدمات المختارة حالياً.",
-                ctx_patch={},
-            )
-
-        patch = {
-            "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_SERVICE][0]
-        }
-
-        return ToolResult(
-            public_text=json.dumps(dates, ensure_ascii=False),
-            ctx_patch=patch,
-            private_data=dates,
-        )
-    except BookingFlowError as e:
-        return ToolResult(
-            public_text=f"عذراً، حدث خطأ في فحص التوفر: {str(e)}",
-            ctx_patch={},
-        )
-
-
-@function_tool
-async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -> ToolResult:
-    """Get available times for a specific date.
-
-    Args:
-        date: The date to check for available times (YYYY-MM-DD format)
-    """
     ctx = wrapper.context
 
     error = _validate_step(ctx, BookingStep.SELECT_DATE)
@@ -166,27 +122,28 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
     gender = ctx.gender or "male"
 
     try:
-        times = await booking_tool.get_available_times(
+        slots = await booking_tool.get_available_times(
             date, ctx.selected_services_pm_si, gender
         )
-        if not times:
+        if not slots:
             return ToolResult(
                 public_text=f"عذراً، لا توجد أوقات متاحة في تاريخ {date}.",
                 ctx_patch={},
             )
 
+        human_times = [s.get("time") for s in slots if s.get("time")]
+        text = ", ".join(human_times)
+
+        if ctx.appointment_date and ctx.appointment_date != date:
+            text = "تم تحديث التاريخ. يرجى اختيار الوقت والطبيب من جديد. " + text
+
         patch = {
             "appointment_date": date,
+            "available_times": slots,
             "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0],
         }
 
-        message = json.dumps(times, ensure_ascii=False)
-        if ctx.appointment_date and ctx.appointment_date != date:
-            message = (
-                "تم تحديث التاريخ. يرجى اختيار الوقت والطبيب من جديد. " + message
-            )
-
-        return ToolResult(public_text=message, ctx_patch=patch, private_data=times)
+        return ToolResult(public_text=text, ctx_patch=patch, private_data=slots)
     except BookingFlowError as e:
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في فحص الأوقات: {str(e)}",
@@ -458,7 +415,6 @@ async def update_booking_context(
 __all__ = [
     "suggest_services",
     "check_availability",
-    "suggest_times",
     "suggest_employees",
     "create_booking",
     "reset_booking",
