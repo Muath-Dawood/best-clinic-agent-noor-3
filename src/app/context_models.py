@@ -1,5 +1,25 @@
 from dataclasses import dataclass
-from typing import Optional, List, Dict
+from enum import Enum
+from typing import Dict, List, Optional
+
+
+class BookingStep(str, Enum):
+    """Enumeration of the booking flow steps."""
+
+    SELECT_SERVICE = "select_service"
+    SELECT_DATE = "select_date"
+    SELECT_TIME = "select_time"
+    SELECT_EMPLOYEE = "select_employee"
+
+
+# Map of allowed transitions in the booking flow
+BOOKING_STEP_TRANSITIONS: Dict[Optional["BookingStep"], List[Optional["BookingStep"]]] = {
+    None: [BookingStep.SELECT_SERVICE],
+    BookingStep.SELECT_SERVICE: [BookingStep.SELECT_DATE],
+    BookingStep.SELECT_DATE: [BookingStep.SELECT_TIME],
+    BookingStep.SELECT_TIME: [BookingStep.SELECT_EMPLOYEE],
+    BookingStep.SELECT_EMPLOYEE: [None],
+}
 
 
 @dataclass
@@ -42,6 +62,6 @@ class BookingContext:
     customer_gender: Optional[str] = None  # for new patients
 
     # flow guidance
-    next_booking_step: Optional[str] = None  # what Noor should ask next
+    next_booking_step: Optional[BookingStep] = None  # what Noor should ask next
     pending_questions: Optional[List[str]] = None  # questions Noor needs to ask
 

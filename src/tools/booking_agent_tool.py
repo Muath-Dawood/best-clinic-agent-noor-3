@@ -9,7 +9,11 @@ from agents import Agent, function_tool, RunContextWrapper
 
 from src.tools.booking_tool import booking_tool, BookingFlowError
 from src.data.services import get_services_by_gender
-from src.app.context_models import BookingContext
+from src.app.context_models import (
+    BookingContext,
+    BookingStep,
+    BOOKING_STEP_TRANSITIONS,
+)
 
 
 # Predefined employees to avoid repeated API calls. These are lightweight
@@ -18,6 +22,13 @@ employee_list: List[Dict[str, str]] = [
     {"pm_si": "emp_ahmad", "name": "Dr. Ahmad"},
     {"pm_si": "emp_sara", "name": "Dr. Sara"},
 ]
+
+
+def _validate_step(ctx: BookingContext, expected: Optional[BookingStep]) -> Optional[str]:
+    """Ensure the booking flow is in the expected step."""
+    if ctx.next_booking_step != expected:
+        return "عذراً، لا يمكن تنفيذ هذه الخطوة الآن."
+    return None
 
 
 def normalize_gender(gender: Optional[str]) -> str:
@@ -37,6 +48,10 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> str:
     """Show available services based on the user's gender preference."""
     ctx = wrapper.context
 
+    error = _validate_step(ctx, None)
+    if error:
+        return error
+
     # Determine gender from context or default to male
     gender = ctx.gender or "male"
 
@@ -47,7 +62,7 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> str:
 
         # Update context with available services
         ctx.selected_services_data = services
-        ctx.next_booking_step = "select_service"
+        ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[None][0]
 
         # Return raw services data without modification
         return json.dumps(services, ensure_ascii=False)
@@ -59,6 +74,10 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> str:
 async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> str:
     """Check available dates for selected services."""
     ctx = wrapper.context
+
+    error = _validate_step(ctx, BookingStep.SELECT_SERVICE)
+    if error:
+        return error
 
     if not ctx.selected_services_pm_si:
         return "عذراً، يجب اختيار الخدمات أولاً قبل فحص التوفر."
@@ -73,7 +92,7 @@ async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> str:
             return "عذراً، لا توجد مواعيد متاحة للخدمات المختارة حالياً."
 
         # Update context with available dates
-        ctx.next_booking_step = "select_date"
+        ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_SERVICE][0]
 
         # Return raw dates exactly as received
         return json.dumps(dates, ensure_ascii=False)
@@ -89,6 +108,10 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
         date: The date to check for available times (YYYY-MM-DD format)
     """
     ctx = wrapper.context
+
+    error = _validate_step(ctx, BookingStep.SELECT_DATE)
+    if error:
+        return error
 
     if not ctx.selected_services_pm_si:
         return "عذراً، يجب اختيار الخدمات أولاً."
@@ -113,7 +136,7 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
 
         # Update context with selected date
         ctx.appointment_date = date
-        ctx.next_booking_step = "select_time"
+        ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0]
 
         # Return raw times exactly as received
         return json.dumps(times, ensure_ascii=False)
@@ -131,6 +154,10 @@ async def suggest_employees(
         time: The time to check for available employees (HH:MM format)
     """
     ctx = wrapper.context
+
+    error = _validate_step(ctx, BookingStep.SELECT_TIME)
+    if error:
+        return error
 
     if not ctx.selected_services_pm_si:
         return "عذراً، يجب اختيار الخدمات أولاً."
@@ -164,7 +191,7 @@ async def suggest_employees(
 
     # Update context with selected time and pricing
     ctx.appointment_time = time
-    ctx.next_booking_step = "select_employee"
+    ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_TIME][0]
     ctx.total_price = float(pricing_total)
 
     # Return employees and pricing exactly as received
@@ -181,6 +208,10 @@ async def create_booking(
         employee_pm_si: The employee token to book with
     """
     ctx = wrapper.context
+
+    error = _validate_step(ctx, BookingStep.SELECT_EMPLOYEE)
+    if error:
+        return error
 
     # Validate all required fields are present
     if not ctx.selected_services_pm_si:
@@ -235,7 +266,7 @@ async def create_booking(
             # Update context to mark booking as confirmed
             ctx.booking_confirmed = True
             ctx.booking_in_progress = False
-            ctx.next_booking_step = None
+            ctx.next_booking_step = BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_EMPLOYEE][0]
 
         # Return the full booking result without modification
         return json.dumps(result, ensure_ascii=False)
@@ -282,7 +313,7 @@ async def update_booking_context(
             * ``employee_pm_si`` (``str``): token of the chosen employee.
             * ``employee_name`` (``str``): human-readable employee name.
             * ``gender`` (``str``): ``"male"`` or ``"female"``.
-            * ``next_booking_step`` (``str``): upcoming workflow step.
+            * ``next_booking_step`` (``BookingStep``): upcoming workflow step.
 
     Examples:
         >>> await update_booking_context(wrapper, {
@@ -310,6 +341,11 @@ async def update_booking_context(
         )
 
     for name, value in updates.items():
+        if name == "next_booking_step" and value is not None:
+            try:
+                value = value if isinstance(value, BookingStep) else BookingStep(value)
+            except ValueError:
+                return "عذراً، خطوة الحجز غير معروفة."
         setattr(ctx, name, value)
 
     return "تم تحديث الحقول: " + ", ".join(updates.keys())
