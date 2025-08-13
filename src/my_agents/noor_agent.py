@@ -12,6 +12,7 @@ from src.tools.booking_agent_tool import (
 )
 from src.app.context_models import BookingContext
 from src.app.output_sanitizer import redact_tokens
+from src.workflows.step_controller import StepControllerRunHooks
 
 
 def _dynamic_footer(ctx: BookingContext) -> str:
@@ -65,7 +66,12 @@ async def run_noor_turn(
     session: SQLiteSession,
 ) -> str:
     noor = _build_noor_agent(ctx)
+    hooks = StepControllerRunHooks()
     result = await Runner.run(
-        starting_agent=noor, input=user_input, session=session, context=ctx
+        starting_agent=noor,
+        input=user_input,
+        session=session,
+        context=ctx,
+        hooks=hooks,
     )
     return redact_tokens(result.final_output)

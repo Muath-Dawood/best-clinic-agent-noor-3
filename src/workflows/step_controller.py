@@ -13,6 +13,12 @@ from copy import deepcopy
 from dataclasses import asdict
 from typing import Any, Dict, Optional
 
+from agents import Agent, RunContextWrapper
+from agents.lifecycle import RunHooksBase
+from agents.tool import Tool
+
+from src.tools.tool_result import ToolResult
+
 from src.app.context_models import (
     BookingContext,
     BookingStep,
@@ -138,5 +144,19 @@ class StepController:
             self.apply_patch(patch, invalidate=False)
 
 
-__all__ = ["StepController"]
+class StepControllerRunHooks(RunHooksBase[BookingContext, Agent]):
+    """Apply context patches returned by tools using :class:`StepController`."""
+
+    async def on_tool_end(
+        self,
+        context: RunContextWrapper[BookingContext],
+        agent: Agent,
+        tool: Tool,
+        result: Any,
+    ) -> None:
+        if isinstance(result, ToolResult) and result.ctx_patch:
+            StepController(context.context).apply_patch(result.ctx_patch)
+
+
+__all__ = ["StepController", "StepControllerRunHooks"]
 

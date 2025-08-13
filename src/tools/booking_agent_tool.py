@@ -15,7 +15,7 @@ from src.app.context_models import (
     BookingStep,
     BOOKING_STEP_TRANSITIONS,
 )
-from src.workflows.step_controller import StepController
+from src.tools.tool_result import ToolResult
 
 
 # Predefined employees to avoid repeated API calls. These are lightweight
@@ -62,46 +62,55 @@ def normalize_gender(gender: Optional[str]) -> str:
 
 
 @function_tool
-async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> str:
+async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
     """Show available services based on the user's gender preference."""
     ctx = wrapper.context
-    controller = StepController(ctx)
 
     error = _validate_step(ctx, None)
     if error:
-        return error
+        return ToolResult(public_text=error, ctx_patch={})
 
     gender = ctx.gender or "male"
 
     try:
         services = get_services_by_gender(gender)
         if not services:
-            return "عذراً، لا توجد خدمات متاحة لهذا القسم حالياً."
+            return ToolResult(
+                public_text="عذراً، لا توجد خدمات متاحة لهذا القسم حالياً.",
+                ctx_patch={},
+            )
 
-        controller.apply_patch(
-            {
-                "selected_services_data": services,
-                "next_booking_step": BOOKING_STEP_TRANSITIONS[None][0],
-            }
+        patch = {
+            "selected_services_data": services,
+            "next_booking_step": BOOKING_STEP_TRANSITIONS[None][0],
+        }
+
+        return ToolResult(
+            public_text=json.dumps(services, ensure_ascii=False),
+            ctx_patch=patch,
+            private_data=services,
         )
-
-        return json.dumps(services, ensure_ascii=False)
     except Exception as e:
-        return f"عذراً، حدث خطأ في جلب الخدمات: {str(e)}"
+        return ToolResult(
+            public_text=f"عذراً، حدث خطأ في جلب الخدمات: {str(e)}",
+            ctx_patch={},
+        )
 
 
 @function_tool
-async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> str:
+async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
     """Check available dates for selected services."""
     ctx = wrapper.context
-    controller = StepController(ctx)
 
     error = _validate_step(ctx, BookingStep.SELECT_SERVICE)
     if error:
-        return error
+        return ToolResult(public_text=error, ctx_patch={})
 
     if not ctx.selected_services_pm_si:
-        return "عذراً، يجب اختيار الخدمات أولاً قبل فحص التوفر."
+        return ToolResult(
+            public_text="عذراً، يجب اختيار الخدمات أولاً قبل فحص التوفر.",
+            ctx_patch={},
+        )
 
     gender = ctx.gender or "male"
 
@@ -110,36 +119,45 @@ async def check_availability(wrapper: RunContextWrapper[BookingContext]) -> str:
             ctx.selected_services_pm_si, gender
         )
         if not dates:
-            return "عذراً، لا توجد مواعيد متاحة للخدمات المختارة حالياً."
+            return ToolResult(
+                public_text="عذراً، لا توجد مواعيد متاحة للخدمات المختارة حالياً.",
+                ctx_patch={},
+            )
 
-        controller.apply_patch(
-            {"next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_SERVICE][0]}
+        patch = {
+            "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_SERVICE][0]
+        }
+
+        return ToolResult(
+            public_text=json.dumps(dates, ensure_ascii=False),
+            ctx_patch=patch,
+            private_data=dates,
         )
-
-        return json.dumps(dates, ensure_ascii=False)
     except BookingFlowError as e:
-        return f"عذراً، حدث خطأ في فحص التوفر: {str(e)}"
+        return ToolResult(
+            public_text=f"عذراً، حدث خطأ في فحص التوفر: {str(e)}",
+            ctx_patch={},
+        )
 
 
 @function_tool
-async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -> str:
+async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -> ToolResult:
     """Get available times for a specific date.
 
     Args:
         date: The date to check for available times (YYYY-MM-DD format)
     """
     ctx = wrapper.context
-    controller = StepController(ctx)
 
     error = _validate_step(ctx, BookingStep.SELECT_DATE)
     if error:
-        return error
+        return ToolResult(public_text=error, ctx_patch={})
 
     if not ctx.selected_services_pm_si:
-        return "عذراً، يجب اختيار الخدمات أولاً."
+        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={})
 
     if not date:
-        return "عذراً، يجب تحديد التاريخ أولاً."
+        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={})
 
     parsed_date = booking_tool.parse_natural_date(date, ctx.user_lang or "ar")
     date = parsed_date or date
@@ -151,111 +169,117 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
             date, ctx.selected_services_pm_si, gender
         )
         if not times:
-            return f"عذراً، لا توجد أوقات متاحة في تاريخ {date}."
+            return ToolResult(
+                public_text=f"عذراً، لا توجد أوقات متاحة في تاريخ {date}.",
+                ctx_patch={},
+            )
 
-        controller.apply_patch(
-            {
-                "appointment_date": date,
-                "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0],
-            }
+        patch = {
+            "appointment_date": date,
+            "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0],
+        }
+
+        return ToolResult(
+            public_text=json.dumps(times, ensure_ascii=False),
+            ctx_patch=patch,
+            private_data=times,
         )
-
-        return json.dumps(times, ensure_ascii=False)
     except BookingFlowError as e:
-        return f"عذراً، حدث خطأ في فحص الأوقات: {str(e)}"
+        return ToolResult(
+            public_text=f"عذراً، حدث خطأ في فحص الأوقات: {str(e)}",
+            ctx_patch={},
+        )
 
 
 @function_tool
 async def suggest_employees(
     wrapper: RunContextWrapper[BookingContext], time: str
-) -> str:
+) -> ToolResult:
     """Get available employees and pricing for a specific date/time.
 
     Args:
         time: The time to check for available employees (HH:MM format)
     """
     ctx = wrapper.context
-    controller = StepController(ctx)
 
     error = _validate_step(ctx, BookingStep.SELECT_TIME)
     if error:
-        return error
+        return ToolResult(public_text=error, ctx_patch={})
 
     if not ctx.selected_services_pm_si:
-        return "عذراً، يجب اختيار الخدمات أولاً."
+        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={})
 
     if not ctx.appointment_date:
-        return "عذراً، يجب تحديد التاريخ أولاً."
+        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={})
 
     if not time:
-        return "عذراً، يجب تحديد الوقت أولاً."
-
-    parsed_date = booking_tool.parse_natural_date(
-        ctx.appointment_date, ctx.user_lang or "ar"
-    )
-    controller.apply_patch({"appointment_date": parsed_date or ctx.appointment_date}, invalidate=False)
+        return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={})
 
     parsed_time = booking_tool.parse_natural_time(time)
     time = parsed_time or time
 
     employees = employee_list
     if not employees:
-        return f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}."
+        return ToolResult(
+            public_text=f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}.",
+            ctx_patch={},
+        )
 
     pricing_total = booking_tool.calculate_total_price(
         ctx.selected_services_pm_si or []
     )
     pricing = {"full_total": pricing_total}
 
-    controller.apply_patch(
-        {
-            "appointment_time": time,
-            "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_TIME][0],
-            "total_price": float(pricing_total),
-        }
-    )
+    patch = {
+        "appointment_time": time,
+        "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_TIME][0],
+        "total_price": float(pricing_total),
+    }
 
-    return json.dumps({"employees": employees, "pricing": pricing}, ensure_ascii=False)
+    data = {"employees": employees, "pricing": pricing}
+
+    return ToolResult(
+        public_text=json.dumps(data, ensure_ascii=False),
+        ctx_patch=patch,
+        private_data=data,
+    )
 
 
 @function_tool
 async def create_booking(
     wrapper: RunContextWrapper[BookingContext], employee_pm_si: str
-) -> str:
+) -> ToolResult:
     """Create the final booking with all selected details.
 
     Args:
         employee_pm_si: The employee token to book with
     """
     ctx = wrapper.context
-    controller = StepController(ctx)
 
     error = _validate_step(ctx, BookingStep.SELECT_EMPLOYEE)
     if error:
-        return error
+        return ToolResult(public_text=error, ctx_patch={})
 
     if not ctx.selected_services_pm_si:
-        return "عذراً، يجب اختيار الخدمات أولاً."
+        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={})
 
     if not ctx.appointment_date:
-        return "عذراً، يجب تحديد التاريخ أولاً."
+        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={})
 
     if not ctx.appointment_time:
-        return "عذراً، يجب تحديد الوقت أولاً."
+        return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={})
 
     if not employee_pm_si:
-        return "عذراً، يجب اختيار الطبيب أولاً."
+        return ToolResult(public_text="عذراً، يجب اختيار الطبيب أولاً.", ctx_patch={})
 
     employee = next(
         (emp for emp in employee_list if emp.get("pm_si") == employee_pm_si),
         None,
     )
-    controller.apply_patch(
-        {
-            "employee_pm_si": employee_pm_si,
-            "employee_name": employee.get("name") if employee else None,
-        }
-    )
+    patch = {
+        "employee_pm_si": employee_pm_si,
+        "employee_name": employee.get("name") if employee else None,
+    }
 
     gender = ctx.gender or "male"
 
@@ -263,7 +287,10 @@ async def create_booking(
         customer_info = {"customer_type": "exists", "customer_search": ctx.user_phone}
     else:
         if not ctx.user_name or not ctx.user_phone:
-            return "عذراً، نحتاج معلوماتك الشخصية لإكمال الحجز. ما اسمك ورقم هاتفك؟"
+            return ToolResult(
+                public_text="عذراً، نحتاج معلوماتك الشخصية لإكمال الحجز. ما اسمك ورقم هاتفك؟",
+                ctx_patch=patch,
+            )
 
         customer_info = {
             "customer_type": "new",
@@ -283,7 +310,7 @@ async def create_booking(
         )
 
         if result.get("result"):
-            controller.apply_patch(
+            patch.update(
                 {
                     "booking_confirmed": True,
                     "booking_in_progress": False,
@@ -291,35 +318,46 @@ async def create_booking(
                 }
             )
 
-        return json.dumps(result, ensure_ascii=False)
+        return ToolResult(
+            public_text=json.dumps(result, ensure_ascii=False),
+            ctx_patch=patch,
+            private_data=result,
+        )
 
     except BookingFlowError as e:
-        return f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}"
+        return ToolResult(
+            public_text=f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}",
+            ctx_patch=patch,
+        )
 
 
 @function_tool
-async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> str:
+async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
     """Reset the booking process and start over."""
-    ctx = wrapper.context
-    controller = StepController(ctx)
+    patch = {
+        "selected_services_pm_si": None,
+        "selected_services_data": None,
+        "appointment_date": None,
+        "appointment_time": None,
+        "total_price": None,
+        "employee_pm_si": None,
+        "employee_name": None,
+        "booking_confirmed": False,
+        "booking_in_progress": False,
+        "next_booking_step": None,
+        "pending_questions": None,
+    }
 
-    controller.invalidate_downstream_fields(BookingStep.SELECT_SERVICE)
-    controller.apply_patch(
-        {
-            "booking_in_progress": False,
-            "next_booking_step": None,
-            "pending_questions": None,
-        },
-        invalidate=False,
+    return ToolResult(
+        public_text="تم إعادة تعيين عملية الحجز. يمكنك البدء من جديد! 😊",
+        ctx_patch=patch,
     )
-
-    return "تم إعادة تعيين عملية الحجز. يمكنك البدء من جديد! 😊"
 
 
 @function_tool
 async def update_booking_context(
     wrapper: RunContextWrapper[BookingContext], updates: BookingContextUpdate
-) -> str:
+) -> ToolResult:
     """Update fields in the booking context.
 
     Args:
@@ -347,15 +385,15 @@ async def update_booking_context(
         ... ))
     """
     ctx = wrapper.context
-    controller = StepController(ctx)
 
     updates_dict = updates.model_dump(exclude_none=True)
     if not updates_dict:
-        return "لم يتم تقديم أي تحديثات."
+        return ToolResult(public_text="لم يتم تقديم أي تحديثات.", ctx_patch={})
 
-    controller.apply_patch(updates_dict)
-
-    return "تم تحديث الحقول: " + ", ".join(updates_dict.keys())
+    return ToolResult(
+        public_text="تم تحديث الحقول: " + ", ".join(updates_dict.keys()),
+        ctx_patch=updates_dict,
+    )
 
 
 __all__ = [
