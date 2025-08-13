@@ -6,7 +6,7 @@ Uses the correct @function_tool pattern from Agents SDK.
 from typing import List, Dict, Optional
 import json
 from pydantic import BaseModel, ConfigDict
-from agents import Agent, function_tool, RunContextWrapper
+from agents import function_tool, RunContextWrapper
 
 from src.tools.booking_tool import booking_tool, BookingFlowError
 from src.data.services import get_services_by_gender
@@ -353,52 +353,12 @@ async def update_booking_context(
     return "تم تحديث الحقول: " + ", ".join(updates_dict.keys())
 
 
-# The mini-agent that owns the booking tools (Noor won't see the complex API calls directly)
-_booking_agent = Agent(
-    name="BookingAgent",
-    instructions=(
-        "You are a booking assistant for Best Clinic 24. Help users book appointments by "
-        "understanding their requests and using the tools.\n\n"
-        "RULES:\n"
-        "- Converse in the user's language (Arabic or English).\n"
-        "- When you call a tool, return its output verbatim, including IDs or tokens. Do not translate, "
-        "  summarize, or drop fields.\n"
-        "- Outside of raw tool output, stay warm, helpful, and conversational.\n"
-        "- When suggesting dates or times, offer 2-3 options if available; if only one exists, explain why.\n"
-        "- Confirm all booking details before creating a booking.\n"
-        "- Handle errors gracefully and suggest alternatives.\n"
-        "- Avoid commentary about APIs or tools—just show the raw output when relevant.\n\n"
-        "AVAILABLE TOOLS:\n"
-        "- suggest_services: Show available services for a gender\n"
-        "- check_availability: Check available dates for selected services\n"
-        "- suggest_times: Get available times for a specific date\n"
-        "- suggest_employees: Get available employees and pricing\n"
-        "- create_booking: Finalize the booking\n"
-        "- reset_booking: Start over if user wants to change something\n\n"
-        "RESPOND NATURALLY and helpfully. Don't be a robot!"
-    ),
-    tools=[
-        suggest_services,
-        check_availability,
-        suggest_times,
-        suggest_employees,
-        create_booking,
-        reset_booking,
-    ],
-    model="gpt-4o-mini",
-)
-
-
-def booking_tool_for_noor():
-    """Return the tool object to plug into Noor.tools."""
-    return [
-        _booking_agent.as_tool(
-            tool_name="handle_booking",
-            tool_description=(
-                "Handle appointment booking for Best Clinic 24. Use this when users want to book "
-                "appointments, check availability, or discuss services. The tool can: show available "
-                "services, check dates/times, suggest employees, and create bookings. Always respond "
-                "naturally in the user's language."
-            ),
-        )
-    ]
+__all__ = [
+    "suggest_services",
+    "check_availability",
+    "suggest_times",
+    "suggest_employees",
+    "create_booking",
+    "reset_booking",
+    "update_booking_context",
+]
