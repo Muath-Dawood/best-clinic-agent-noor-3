@@ -424,13 +424,13 @@ async def update_booking_context(
     ctx = wrapper.context
 
     updates_dict = updates.model_dump(exclude_none=True)
+    # ``next_booking_step`` is managed automatically by :class:`StepController`.
+    # If provided, ignore it rather than returning an error so callers can send
+    # payloads without needing to filter the field themselves.
+    updates_dict.pop("next_booking_step", None)
+
     if not updates_dict:
         return ToolResult(public_text="لم يتم تقديم أي تحديثات.", ctx_patch={})
-
-    if "next_booking_step" in updates_dict:
-        return ToolResult(
-            public_text="لا يمكن تعديل خطوة الحجز التالية مباشرة.", ctx_patch={}
-        )
 
     messages: list[str] = []
     controller = StepController(ctx)
