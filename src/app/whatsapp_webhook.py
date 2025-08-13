@@ -62,14 +62,11 @@ async def _send_whatsapp(chat_id: str, text: str) -> None:
                     if 200 <= resp.status_code < 300:
                         success = True
                         break
-                    # Non-2xx response: log body, status, and diagnostics
+                    # Non-2xx response: log minimal diagnostics
                     logger.error(
-                        "WhatsApp send failed: status=%s body=%s payload_len=%d req_headers=%s resp_headers=%s",
+                        "WhatsApp send failed: status=%s body=%s",
                         resp.status_code,
-                        resp.text,
-                        len(chunk),
-                        resp.request.headers,
-                        resp.headers,
+                        resp.text[:200],
                     )
                     if resp.status_code in {429} or resp.status_code >= 500:
                         if attempt < retries:
@@ -169,6 +166,12 @@ async def receive_wa(request: Request) -> Response:
             )
         except Exception as e:
             logger.error(f"prefetch: error for {sender_id}: {e}")
+
+    # Identify the chat for idempotency keys / personalization
+    try:
+        ctx.chat_id = sender_id  # used by booking create to de-duplicate
+    except Exception:
+        pass
 
     # --- Run Noor with session + context ---
     try:

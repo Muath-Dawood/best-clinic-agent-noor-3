@@ -140,9 +140,14 @@ async def check_availability(
 
     ctx = wrapper.context
 
-    error = _validate_step(ctx, BookingStep.SELECT_DATE)
+    # Allow invoking from later steps (time/employee). If so, invalidate downstream fields
+    # as if the user asked to change the date.
+    error = _validate_step(ctx, BookingStep.SELECT_DATE, BookingStep.SELECT_TIME, BookingStep.SELECT_EMPLOYEE)
     if error:
         return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
+    if ctx.next_booking_step in (BookingStep.SELECT_TIME, BookingStep.SELECT_EMPLOYEE):
+        controller = StepController(ctx)
+        controller.invalidate_downstream_fields(BookingStep.SELECT_DATE, expected_version=ctx.version)
 
     # Safety: ensure selected services are valid pm_si tokens
     invalid = [pm for pm in (ctx.selected_services_pm_si or []) if not find_service_by_pm_si(pm)]
@@ -226,7 +231,7 @@ async def suggest_employees(
     """
     ctx = wrapper.context
 
-    error = _validate_step(ctx, BookingStep.SELECT_TIME)
+    error = _validate_step(ctx, BookingStep.SELECT_TIME, BookingStep.SELECT_EMPLOYEE)
     if error:
         return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
@@ -242,17 +247,19 @@ async def suggest_employees(
     parsed_time = booking_tool.parse_natural_time(time)
     time = parsed_time or time
 
-    if not ctx.available_times:
-        return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={}, version=ctx.version)
-
-    times = {t.get("time") for t in ctx.available_times if t.get("time")}
-    if time not in times:
-        human_times = ", ".join(sorted(times))
-        return ToolResult(
-            public_text=f"عذراً، الوقت {time} غير متاح. الأوقات المتاحة: {human_times}",
-            ctx_patch={},
-            version=ctx.version,
-        )
+    # If we're still at the time step, enforce time to be from the offered list.
+    # If we're already at the employee step (time is set), be forgiving: allow re-query for the same time.
+    if ctx.next_booking_step == BookingStep.SELECT_TIME:
+        if not ctx.available_times:
+            return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={}, version=ctx.version)
+        times = {t.get("time") for t in ctx.available_times if t.get("time")}
+        if time not in times:
+            human_times = ", ".join(sorted(times))
+            return ToolResult(
+                public_text=f"عذراً، الوقت {time} غير متاح. الأوقات المتاحة: {human_times}",
+                ctx_patch={},
+                version=ctx.version,
+            )
 
     gender = ctx.gender or "male"
 
@@ -283,13 +290,14 @@ async def suggest_employees(
             disp = nm or (f"Doctor {pm}" if pm else None)
             if pm and disp:
                 norm_emps.append({"pm_si": pm, "name": nm, "display": disp})
+    # Only write appointment_time if it changed; otherwise keep context stable.
     patch = {
-        "appointment_time": time,
         "offered_employees": norm_emps,
         "checkout_summary": checkout_summary,
     }
     prefix = ""
-    if ctx.appointment_time and ctx.appointment_time != time:
+    if ctx.appointment_time != time:
+        patch["appointment_time"] = time
         prefix = "تم تحديث الوقت. يرجى اختيار الطبيب من جديد. "
     human = prefix + _format_employees_list(norm_emps, checkout_summary)
     return ToolResult(
@@ -551,8 +559,9 @@ async def update_booking_context(
         ... ))
     """
     ctx = wrapper.context
-
-    updates_dict = updates.model_dump(exclude_none=True)
+    # --- hygiene: strip nulls & block next_booking_step from userland ---
+    raw = updates.model_dump()
+    updates_dict = {k: v for k, v in (raw or {}).items() if v is not None}
     updates_dict.pop("next_booking_step", None)
 
     messages: list[str] = []

@@ -123,6 +123,22 @@ Do **not** include `next_booking_step` in updates.
 - Start over:
   - `reset_booking()` then begin with services.
 
+TIME → DOCTORS HANDOFF (CRITICAL)
+- After you show available times and the user chooses a time:
+  • Do NOT call update_booking_context first.
+  • Call suggest_employees(time=<the chosen time>) directly.
+  • That call stores the time and returns available doctors.
+- If you already set the time and you need to re-fetch doctors for the SAME time,
+  you may call suggest_employees(time) again.
+
+USER CHANGES AN EARLIER CHOICE
+- If they change the date while you’re at time/doctor:
+  • Call check_availability(new_date). The system will auto-clear downstream fields.
+- If they change the time after doctors are shown:
+  • Call suggest_employees(new_time). If time changes, the system will clear offered doctors.
+- If they change the service:
+  • Call revert_to_step("select_service"), then update_booking_context(selected_services_pm_si=[...]) and continue.
+
 ---
 
 # SAFETY & MEDICAL TONE
