@@ -3,7 +3,7 @@ Booking Agent Tool - provides functional tools for Noor to handle appointment bo
 Uses the correct @function_tool pattern from Agents SDK.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 import json
 from pydantic import BaseModel, ConfigDict
 from agents import function_tool, RunContextWrapper
@@ -16,6 +16,7 @@ from src.app.context_models import (
     BOOKING_STEP_TRANSITIONS,
 )
 from src.tools.tool_result import ToolResult
+from src.workflows.step_controller import StepController
 
 
 # Predefined employees to avoid repeated API calls. These are lightweight
@@ -179,11 +180,13 @@ async def suggest_times(wrapper: RunContextWrapper[BookingContext], date: str) -
             "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0],
         }
 
-        return ToolResult(
-            public_text=json.dumps(times, ensure_ascii=False),
-            ctx_patch=patch,
-            private_data=times,
-        )
+        message = json.dumps(times, ensure_ascii=False)
+        if ctx.appointment_date and ctx.appointment_date != date:
+            message = (
+                "تم تحديث التاريخ. يرجى اختيار الوقت والطبيب من جديد. " + message
+            )
+
+        return ToolResult(public_text=message, ctx_patch=patch, private_data=times)
     except BookingFlowError as e:
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في فحص الأوقات: {str(e)}",
@@ -238,11 +241,11 @@ async def suggest_employees(
 
     data = {"employees": employees, "pricing": pricing}
 
-    return ToolResult(
-        public_text=json.dumps(data, ensure_ascii=False),
-        ctx_patch=patch,
-        private_data=data,
-    )
+    message = json.dumps(data, ensure_ascii=False)
+    if ctx.appointment_time and ctx.appointment_time != time:
+        message = "تم تحديث الوقت. يرجى اختيار الطبيب من جديد. " + message
+
+    return ToolResult(public_text=message, ctx_patch=patch, private_data=data)
 
 
 @function_tool
@@ -355,6 +358,40 @@ async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> ToolResul
 
 
 @function_tool
+async def revert_to_step(
+    wrapper: RunContextWrapper[BookingContext],
+    step: Literal[
+        "select_service",
+        "select_date",
+        "select_time",
+        "select_employee",
+    ],
+) -> ToolResult:
+    """Revert the booking flow to a previous ``step`` and invalidate downstream selections."""
+
+    ctx = wrapper.context
+    controller = StepController(ctx)
+    start_version = ctx.version
+    step_enum = BookingStep(step)
+    controller.invalidate_downstream_fields(step_enum)
+    fields = StepController._DOWNSTREAM_FIELDS.get(step_enum, [])
+    patch: Dict[str, Optional[str | List[str] | float | bool]] = {}
+    if fields:
+        primary = fields[0]
+        patch[primary] = getattr(controller.ctx, primary)
+    controller.revert_to(start_version)
+
+    msg_map = {
+        BookingStep.SELECT_SERVICE: "تم الرجوع إلى خطوة اختيار الخدمة. يرجى إعادة اختيار الخدمة، التاريخ، الوقت والطبيب.",
+        BookingStep.SELECT_DATE: "تم الرجوع إلى خطوة اختيار التاريخ. يرجى إعادة اختيار التاريخ، الوقت والطبيب.",
+        BookingStep.SELECT_TIME: "تم الرجوع إلى خطوة اختيار الوقت. يرجى إعادة اختيار الوقت والطبيب.",
+        BookingStep.SELECT_EMPLOYEE: "تم الرجوع إلى خطوة اختيار الطبيب. يرجى إعادة اختيار الطبيب.",
+    }
+
+    return ToolResult(public_text=msg_map.get(step_enum, ""), ctx_patch=patch)
+
+
+@function_tool
 async def update_booking_context(
     wrapper: RunContextWrapper[BookingContext], updates: BookingContextUpdate
 ) -> ToolResult:
@@ -395,10 +432,27 @@ async def update_booking_context(
             public_text="لا يمكن تعديل خطوة الحجز التالية مباشرة.", ctx_patch={}
         )
 
-    return ToolResult(
-        public_text="تم تحديث الحقول: " + ", ".join(updates_dict.keys()),
-        ctx_patch=updates_dict,
-    )
+    messages: list[str] = []
+    controller = StepController(ctx)
+    start_version = ctx.version
+    msg_map = {
+        BookingStep.SELECT_SERVICE: "تم تحديث الخدمات. يرجى اختيار التاريخ، الوقت، والطبيب من جديد.",
+        BookingStep.SELECT_DATE: "تم تحديث التاريخ. يرجى اختيار الوقت والطبيب من جديد.",
+        BookingStep.SELECT_TIME: "تم تحديث الوقت. يرجى اختيار الطبيب من جديد.",
+    }
+    for field in ["selected_services_pm_si", "appointment_date", "appointment_time"]:
+        if field in updates_dict and getattr(ctx, field) != updates_dict[field]:
+            step = StepController._FIELD_TO_STEP[field]
+            if step in msg_map:
+                controller.invalidate_downstream_fields(step)
+                messages.append(msg_map[step])
+                controller.revert_to(start_version)
+
+    text = "تم تحديث الحقول: " + ", ".join(updates_dict.keys())
+    if messages:
+        text += ". " + " ".join(messages)
+
+    return ToolResult(public_text=text, ctx_patch=updates_dict)
 
 
 __all__ = [
@@ -408,5 +462,6 @@ __all__ = [
     "suggest_employees",
     "create_booking",
     "reset_booking",
+    "revert_to_step",
     "update_booking_context",
 ]

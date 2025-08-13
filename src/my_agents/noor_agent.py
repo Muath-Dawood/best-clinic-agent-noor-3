@@ -8,6 +8,7 @@ from src.tools.booking_agent_tool import (
     suggest_employees,
     create_booking,
     reset_booking,
+    revert_to_step,
     update_booking_context,
 )
 from src.app.context_models import BookingContext
@@ -54,6 +55,7 @@ def _build_noor_agent(ctx: BookingContext) -> Agent:
         suggest_employees,
         create_booking,
         reset_booking,
+        revert_to_step,
     ]
 
     return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
