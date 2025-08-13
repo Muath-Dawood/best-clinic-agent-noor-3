@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional
+from datetime import datetime, timezone
 
 
 class BookingStep(str, Enum):
@@ -13,7 +14,9 @@ class BookingStep(str, Enum):
 
 
 # Map of allowed transitions in the booking flow
-BOOKING_STEP_TRANSITIONS: Dict[Optional["BookingStep"], List[Optional["BookingStep"]]] = {
+BOOKING_STEP_TRANSITIONS: Dict[
+    Optional["BookingStep"], List[Optional["BookingStep"]]
+] = {
     None: [BookingStep.SELECT_SERVICE],
     BookingStep.SELECT_SERVICE: [BookingStep.SELECT_DATE],
     BookingStep.SELECT_DATE: [BookingStep.SELECT_TIME],
@@ -29,6 +32,9 @@ class BookingContext:
     user_phone: Optional[str] = None
     user_lang: Optional[str] = None
     tz: str = "Asia/Hebron"
+    current_datetime: Optional[str] = datetime.now(timezone("Asia/Hebron")).strftime(
+        "%Y-%m-%dT%H:%M:%S%z"
+    )  # ISO format
 
     # gender and section (determines available services)
     gender: Optional[str] = None  # 'male'/'female' or 'ذكر'/'أنثى'
@@ -41,7 +47,9 @@ class BookingContext:
 
     # booking selections - these build up as the user progresses
     selected_services_pm_si: Optional[List[str]] = None  # list of service pm_si tokens
-    selected_services_data: Optional[List[Dict]] = None  # full service objects for display
+    selected_services_data: Optional[List[Dict]] = (
+        None  # full service objects for display
+    )
 
     # appointment details
     appointment_date: Optional[str] = None  # YYYY-MM-DD format
@@ -70,4 +78,3 @@ class BookingContext:
 
     # versioning
     version: int = 0  # incremented on each context update
-

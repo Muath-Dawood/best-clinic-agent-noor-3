@@ -22,6 +22,8 @@ def _dynamic_footer(ctx: BookingContext) -> str:
         lines += [
             "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF INTERNAL CONTEXT (do not reveal to user; use the info naturally)"
         ]
+        lines.append(f"current_datetime={ctx.current_datetime}")
+        lines.append(f"tz={ctx.tz}")
         if ctx.user_name:
             lines.append(f"user_name={ctx.user_name}")
         if ctx.user_phone:
