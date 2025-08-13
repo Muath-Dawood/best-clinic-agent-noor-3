@@ -2,7 +2,12 @@ from agents import Agent, Runner, SQLiteSession
 from src.my_agents.prompts.system_prompt_noor import SYSTEM_PROMPT
 from src.tools.kb_agent_tool import kb_tool_for_noor
 from src.tools.booking_agent_tool import (
-    booking_tool_for_noor,
+    suggest_services,
+    check_availability,
+    suggest_times,
+    suggest_employees,
+    create_booking,
+    reset_booking,
     update_booking_context,
 )
 from src.app.context_models import BookingContext
@@ -36,11 +41,19 @@ def _dynamic_footer(ctx: BookingContext) -> str:
 
 def _build_noor_agent(ctx: BookingContext) -> Agent:
     instructions = SYSTEM_PROMPT + "\n\n" + _dynamic_footer(ctx)
-    # kb_tool_for_noor() and booking_tool_for_noor() each return a list of tools.
-    # If we naively append them, Agent.tools would contain nested lists, which breaks
-    # the Runner (it expects each element to be a Tool with a ``name`` attribute).
-    # Flatten the lists so that ``Agent`` receives a simple list of Tool objects.
-    tools = [update_booking_context] + kb_tool_for_noor() + booking_tool_for_noor()
+    # kb_tool_for_noor() returns a list of tools. Combine it with the booking
+    # tool functions and ``update_booking_context`` so ``Agent`` receives a flat
+    # list of Tool objects.
+    tools = [
+        update_booking_context,
+        *kb_tool_for_noor(),
+        suggest_services,
+        check_availability,
+        suggest_times,
+        suggest_employees,
+        create_booking,
+        reset_booking,
+    ]
 
     return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
 
