@@ -122,6 +122,33 @@ class BookingTool:
 
             parsed_date = parse_date(text, settings=settings, languages=[language])
             if not parsed_date:
+                lowered = text.strip().lower()
+                weekday_map = {
+                    "monday": 0,
+                    "tuesday": 1,
+                    "wednesday": 2,
+                    "thursday": 3,
+                    "friday": 4,
+                    "saturday": 5,
+                    "sunday": 6,
+                    "الاثنين": 0,
+                    "الإثنين": 0,
+                    "الثلاثاء": 1,
+                    "الأربعاء": 2,
+                    "الاربعاء": 2,
+                    "الخميس": 3,
+                    "الجمعة": 4,
+                    "السبت": 5,
+                    "الأحد": 6,
+                    "الاحد": 6,
+                }
+                for name, idx in weekday_map.items():
+                    if name in lowered:
+                        today = datetime.now(tz).date()
+                        days_ahead = (idx - today.weekday() + 7) % 7
+                        if "القادم" in lowered or days_ahead == 0:
+                            days_ahead = (days_ahead or 7)
+                        return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
                 return None
 
             # Normalize parsed date to configured timezone
@@ -188,7 +215,20 @@ class BookingTool:
         }
 
         text_lower = text.lower().strip()
-        return time_mappings.get(text_lower)
+        if text_lower in time_mappings:
+            return time_mappings[text_lower]
+
+        try:
+            parsed = parse_date(text, languages=["ar", "en"])
+            if parsed:
+                if parsed.tzinfo is None:
+                    parsed = tz.localize(parsed)
+                else:
+                    parsed = parsed.astimezone(tz)
+                return parsed.strftime("%H:%M")
+        except Exception:
+            pass
+        return None
 
     async def get_available_dates(
         self, services_pm_si: List[str], gender: str
