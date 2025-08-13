@@ -16,13 +16,15 @@ class DummyWrapper:
 
 
 @pytest.mark.asyncio
-async def test_update_booking_context_rejects_next_step():
+async def test_update_booking_context_ignores_next_step():
+    """If ``next_booking_step`` is provided, it should simply be ignored."""
     wrapper = DummyWrapper()
     updates = BookingContextUpdate(next_booking_step=BookingStep.SELECT_DATE)
     payload = json.dumps({"updates": updates.model_dump()})
     result = await update_booking_context.on_invoke_tool(wrapper, payload)
     assert result.ctx_patch == {}
-    assert "لا يمكن" in result.public_text
+    # Should return generic message indicating no updates were applied
+    assert "لم يتم" in result.public_text
 
 
 def test_apply_patch_sets_next_step():
