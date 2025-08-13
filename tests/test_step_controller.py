@@ -13,6 +13,9 @@ from src.tools.booking_agent_tool import (
 from src.workflows.step_controller import StepController
 from src.data.services import MEN_SERVICES
 
+# Use a real service token for tests instead of placeholder values
+CANONICAL_SERVICE_TOKEN = MEN_SERVICES[0]["pm_si"]
+
 
 class DummyWrapper:
     def __init__(self, ctx: BookingContext | None = None):
@@ -48,7 +51,10 @@ def test_apply_patch_sets_next_step():
     ctx = BookingContext()
     controller = StepController(ctx)
     controller.apply_patch(
-        {"selected_services_pm_si": ["svc1"], "next_booking_step": BookingStep.SELECT_EMPLOYEE}
+        {
+            "selected_services_pm_si": [CANONICAL_SERVICE_TOKEN],
+            "next_booking_step": BookingStep.SELECT_EMPLOYEE,
+        }
     )
     assert ctx.next_booking_step == BookingStep.SELECT_DATE
     controller.apply_patch(
@@ -81,7 +87,7 @@ def test_apply_patch_rejects_downstream_fields():
 @pytest.mark.asyncio
 async def test_revert_to_step_clears_downstream_fields():
     ctx = BookingContext(
-        selected_services_pm_si=["svc1"],
+        selected_services_pm_si=[CANONICAL_SERVICE_TOKEN],
         appointment_date="2024-06-01",
         appointment_time="10:00",
         employee_pm_si="emp1",
@@ -101,7 +107,7 @@ async def test_revert_to_step_clears_downstream_fields():
 @pytest.mark.asyncio
 async def test_update_booking_context_invalidates_downstream():
     ctx = BookingContext(
-        selected_services_pm_si=["svc1"],
+        selected_services_pm_si=[CANONICAL_SERVICE_TOKEN],
         appointment_date="2024-06-01",
         appointment_time="09:00",
         employee_pm_si="emp1",
@@ -169,7 +175,7 @@ async def test_check_availability_no_slots_prevents_progress(monkeypatch):
 @pytest.mark.asyncio
 async def test_suggest_employees_respects_available_times_and_populates(monkeypatch):
     ctx = BookingContext(
-        selected_services_pm_si=["svc1"],
+        selected_services_pm_si=[CANONICAL_SERVICE_TOKEN],
         appointment_date="2024-06-01",
         available_times=[{"time": "09:00"}],
     )
