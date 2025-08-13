@@ -14,6 +14,7 @@ from src.tools.booking_agent_tool import (
 from src.app.context_models import BookingContext
 from src.app.output_sanitizer import redact_tokens
 from src.workflows.step_controller import StepControllerRunHooks
+from src.app.event_log import log_event, set_turn_id
 
 
 def _dynamic_footer(ctx: BookingContext) -> str:
@@ -67,6 +68,10 @@ async def run_noor_turn(
     ctx: BookingContext,
     session: SQLiteSession,
 ) -> str:
+    turn_id = len(await session.get_items())
+    set_turn_id(turn_id)
+    log_event("user_text", {"text": user_input})
+
     noor = _build_noor_agent(ctx)
     hooks = StepControllerRunHooks()
     result = await Runner.run(
@@ -76,4 +81,6 @@ async def run_noor_turn(
         context=ctx,
         hooks=hooks,
     )
+
+    log_event("intent", {"next_booking_step": str(ctx.next_booking_step)})
     return redact_tokens(result.final_output)

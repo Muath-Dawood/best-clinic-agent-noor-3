@@ -24,6 +24,7 @@ from src.app.context_models import (
     BookingStep,
     BOOKING_STEP_TRANSITIONS,
 )
+from src.app.event_log import log_event
 
 
 class StepController:
@@ -146,8 +147,15 @@ class StepController:
 
         patch = {k: v for k, v in patch.items() if k != "next_booking_step"}
 
+        prev_step = self.ctx.next_booking_step
+
         if not patch:
             self.ctx.next_booking_step = self._compute_next_step()
+            if prev_step != self.ctx.next_booking_step:
+                log_event(
+                    "step_transition",
+                    {"from": prev_step, "to": self.ctx.next_booking_step, "version": self.ctx.version},
+                )
             return
 
         if invalidate:
@@ -164,6 +172,13 @@ class StepController:
         self.ctx.version += 1
         self._history[self.ctx.version] = deepcopy(self.ctx)
 
+        if prev_step != self.ctx.next_booking_step:
+            log_event(
+                "step_transition",
+                {"from": prev_step, "to": self.ctx.next_booking_step, "version": self.ctx.version},
+            )
+        log_event("context_patch", {"patch": patch, "version": self.ctx.version})
+
     # ------------------------------------------------------------------
     def revert_to(self, version: int) -> None:
         """Revert the context to ``version`` if available."""
@@ -171,6 +186,8 @@ class StepController:
         snapshot = self._history.get(version)
         if snapshot is None:
             return
+
+        prev_step = self.ctx.next_booking_step
 
         for field in self.ctx.__dataclass_fields__:
             setattr(self.ctx, field, getattr(snapshot, field))
@@ -180,6 +197,13 @@ class StepController:
             v: deepcopy(s) for v, s in self._history.items() if v <= version
         }
 
+        if prev_step != self.ctx.next_booking_step:
+            log_event(
+                "step_transition",
+                {"from": prev_step, "to": self.ctx.next_booking_step, "version": self.ctx.version},
+            )
+        log_event("revert_context", {"version": version})
+
     # ------------------------------------------------------------------
     def invalidate_downstream_fields(self, step: BookingStep) -> None:
         """Clear fields for ``step`` and all downstream steps."""
@@ -187,6 +211,7 @@ class StepController:
         fields = self._DOWNSTREAM_FIELDS.get(step, [])
         patch = {name: self._defaults[name] for name in fields}
         if patch:
+            log_event("invalidate_downstream", {"step": step, "fields": fields})
             self.apply_patch(patch, invalidate=False)
 
 
@@ -200,6 +225,7 @@ class StepControllerRunHooks(RunHooksBase[BookingContext, Agent]):
         tool: Tool,
         result: Any,
     ) -> None:
+        log_event("tool_call", {"tool": getattr(tool, "name", str(tool))})
         if isinstance(result, ToolResult) and result.ctx_patch:
             StepController(context.context).apply_patch(result.ctx_patch)
 
