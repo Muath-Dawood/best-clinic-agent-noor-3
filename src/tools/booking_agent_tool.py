@@ -3,7 +3,7 @@ Booking Agent Tool - provides functional tools for Noor to handle appointment bo
 Uses the correct @function_tool pattern from Agents SDK.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from agents import Agent, function_tool, RunContextWrapper
 
 from src.tools.booking_tool import booking_tool, BookingFlowError
@@ -278,6 +278,33 @@ async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> str:
     return "تم إعادة تعيين عملية الحجز. يمكنك البدء من جديد! 😊"
 
 
+@function_tool
+async def update_booking_context(
+    wrapper: RunContextWrapper[BookingContext], updates: Dict[str, Any]
+) -> str:
+    """Update fields in the booking context.
+
+    Args:
+        updates: Mapping of field names to new values.
+    """
+    ctx = wrapper.context
+
+    if not updates:
+        return "لم يتم تقديم أي تحديثات."
+
+    invalid_fields = [name for name in updates if not hasattr(ctx, name)]
+    if invalid_fields:
+        return (
+            "عذراً، الحقول التالية غير معروفة: "
+            + ", ".join(invalid_fields)
+        )
+
+    for name, value in updates.items():
+        setattr(ctx, name, value)
+
+    return "تم تحديث الحقول: " + ", ".join(updates.keys())
+
+
 # The mini-agent that owns the booking tools (Noor won't see the complex API calls directly)
 _booking_agent = Agent(
     name="BookingAgent",
@@ -298,7 +325,8 @@ _booking_agent = Agent(
         "- suggest_times: Get available times for a specific date\n"
         "- suggest_employees: Get available employees and pricing\n"
         "- create_booking: Finalize the booking\n"
-        "- reset_booking: Start over if user wants to change something\n\n"
+        "- reset_booking: Start over if user wants to change something\n"
+        "- update_booking_context: Modify booking details directly\n\n"
         "RESPOND NATURALLY and helpfully. Don't be a robot!"
     ),
     tools=[
@@ -308,6 +336,7 @@ _booking_agent = Agent(
         suggest_employees,
         create_booking,
         reset_booking,
+        update_booking_context,
     ],
     model="gpt-4o-mini",
 )
