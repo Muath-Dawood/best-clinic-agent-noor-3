@@ -140,7 +140,7 @@ class StepController:
             return BookingStep.SELECT_SERVICE
         if not self.ctx.appointment_date:
             return BookingStep.SELECT_DATE
-        if not self.ctx.available_times:
+        if not self.ctx.available_times and not self.ctx.appointment_time:
             return BookingStep.SELECT_DATE
         if not self.ctx.appointment_time:
             return BookingStep.SELECT_TIME

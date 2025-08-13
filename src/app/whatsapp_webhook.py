@@ -177,13 +177,16 @@ async def receive_wa(request: Request) -> Response:
             ctx=ctx,
             session=session,
         )
-    except Exception as e:
-        print(e)
+    except Exception:
+        logger.exception("run_noor_turn failed")
         reply = "عذرًا، في خلل تقني بسيط الآن. جرّب بعد قليل لو تكرّمت."
 
-    # Persist state and send reply
-    await touch_state(sender_id, ctx, session)
+    # Send reply even if persistence fails
     fire_and_forget_send(sender_id, reply)
+    try:
+        await touch_state(sender_id, ctx, session)
+    except Exception:
+        logger.exception("touch_state failed for %s", sender_id)
 
     # ---- idle summarization hooks ----
     await update_last_seen(sender_id)

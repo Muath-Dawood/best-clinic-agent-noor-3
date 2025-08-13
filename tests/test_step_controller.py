@@ -196,7 +196,8 @@ async def test_suggest_employees_respects_available_times_and_populates(monkeypa
 
     payload = json.dumps({"time": "09:00"})
     result = await suggest_employees.on_invoke_tool(wrapper, payload)
-    assert result.ctx_patch["appointment_time"] == "09:00"
-    assert result.ctx_patch["offered_employees"] == employees
-    assert result.ctx_patch["checkout_summary"] == summary
-    assert result.ctx_patch["next_booking_step"] == BookingStep.SELECT_EMPLOYEE
+    StepController(ctx).apply_patch(result.ctx_patch)
+    assert ctx.appointment_time == "09:00"
+    assert ctx.offered_employees == employees
+    assert ctx.checkout_summary == summary
+    assert ctx.next_booking_step == BookingStep.SELECT_EMPLOYEE

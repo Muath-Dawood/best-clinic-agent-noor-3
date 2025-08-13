@@ -20,7 +20,7 @@ def _dynamic_footer(ctx: BookingContext) -> str:
     lines = []
     if ctx and (ctx.user_name or ctx.user_phone):
         lines += [
-            "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF INTERNAL CONTEXT (do not reveal to user use the info natuarally)"
+            "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF INTERNAL CONTEXT (do not reveal to user; use the info naturally)"
         ]
         if ctx.user_name:
             lines.append(f"user_name={ctx.user_name}")
