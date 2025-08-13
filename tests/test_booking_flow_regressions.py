@@ -101,3 +101,27 @@ async def test_check_availability_from_later_step_rewinds(monkeypatch):
     assert ctx.appointment_time is None
     assert ctx.employee_pm_si is None
     assert ctx.next_booking_step == BookingStep.SELECT_TIME
+
+
+@pytest.mark.asyncio
+async def test_suggest_employees_handles_empty_employees_and_shows_alternatives(monkeypatch):
+    ctx = BookingContext(
+        selected_services_pm_si=[CANON],
+        appointment_date="2025-09-01",
+        available_times=[{"time": "10:00"}, {"time": "10:10"}],
+    )
+    StepController(ctx).apply_patch({})
+    ctx.next_booking_step = BookingStep.SELECT_TIME
+    wrapper = DummyWrapper(ctx)
+
+    async def fake_emps(date, time, services, gender):
+        return ([], {"total_price": 100})
+
+    monkeypatch.setattr(
+        booking_tool_module.booking_tool, "get_available_employees", fake_emps
+    )
+
+    result = await suggest_employees.on_invoke_tool(wrapper, json.dumps({"time": "10:00"}))
+    assert "لا يوجد أطباء" in result.public_text
+    # Should list alternatives without crashing even if no 'times' local var existed
+    assert "10:00" in result.public_text or "10:10" in result.public_text

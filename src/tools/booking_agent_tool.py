@@ -230,6 +230,10 @@ async def suggest_employees(
         time: The time to check for available employees (HH:MM format)
     """
     ctx = wrapper.context
+    # Build a safe set of available times for user-facing alternatives/messages
+    available_times_set = {
+        t.get("time") for t in (ctx.available_times or []) if isinstance(t, dict) and t.get("time")
+    }
 
     error = _validate_step(ctx, BookingStep.SELECT_TIME, BookingStep.SELECT_EMPLOYEE)
     if error:
@@ -252,9 +256,8 @@ async def suggest_employees(
     if ctx.next_booking_step == BookingStep.SELECT_TIME:
         if not ctx.available_times:
             return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={}, version=ctx.version)
-        times = {t.get("time") for t in ctx.available_times if t.get("time")}
-        if time not in times:
-            human_times = ", ".join(sorted(times))
+        if time not in available_times_set:
+            human_times = ", ".join(sorted(available_times_set))
             return ToolResult(
                 public_text=f"عذراً، الوقت {time} غير متاح. الأوقات المتاحة: {human_times}",
                 ctx_patch={},
@@ -275,7 +278,7 @@ async def suggest_employees(
         )
 
     if not employees:
-        alternatives = ", ".join(sorted(times))
+        alternatives = ", ".join(sorted(available_times_set)) if available_times_set else "—"
         return ToolResult(
             public_text=f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}. الأوقات المتاحة الأخرى: {alternatives}",
             ctx_patch={},
@@ -427,9 +430,27 @@ async def create_booking(
                     "booking_in_progress": False,
                 }
             )
-
+            # Build a friendly confirmation (Arabic-first)
+            services = ctx.selected_services_data or []
+            if not services and ctx.selected_services_pm_si:
+                # light fallback: show count if titles are unavailable
+                services = [{"title": f"{len(ctx.selected_services_pm_si)} خدمة"}]
+            titles = [s.get("title") for s in services if isinstance(s, dict) and s.get("title")]
+            services_text = "، ".join(titles) if titles else "الخدمة المختارة"
+            human = (
+                f"✅ تم تأكيد حجزك لـ {services_text} "
+                f"يوم {ctx.appointment_date} الساعة {ctx.appointment_time} "
+                f"مع {ctx.employee_name or 'الطبيب المختار'}. أهلاً وسهلاً!"
+            )
+            return ToolResult(
+                public_text=human,
+                ctx_patch=patch,
+                private_data=result,
+                version=ctx.version,
+            )
+        # Non-true result (should be rare—API said false earlier)
         return ToolResult(
-            public_text=json.dumps(result, ensure_ascii=False),
+            public_text="عذراً، لم نتمكن من تأكيد الحجز حالياً. جرب وقتاً مختلفاً أو تاريخاً آخر.",
             ctx_patch=patch,
             private_data=result,
             version=ctx.version,
