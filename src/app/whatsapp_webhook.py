@@ -58,7 +58,7 @@ async def receive_wa(request: Request) -> Response:
         return Response(content='{"status":"ignored"}', media_type="application/json")
 
     # --- Load or create state (context + session) ---
-    state = get_state(sender_id)
+    state = await get_state(sender_id)
     if state:
         ctx, session = state
         is_new_session = False
@@ -133,7 +133,7 @@ async def receive_wa(request: Request) -> Response:
         reply = "عذرًا، في خلل تقني بسيط الآن. جرّب بعد قليل لو تكرّمت."
 
     # Persist state and send reply
-    touch_state(sender_id, ctx, session)
+    await touch_state(sender_id, ctx, session)
     fire_and_forget_send(sender_id, reply)
 
     # ---- idle summarization hooks ----

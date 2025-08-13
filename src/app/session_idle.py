@@ -38,7 +38,7 @@ async def _check_and_finalize(user_id: str) -> None:
         await asyncio.sleep(IDLE_SECONDS)
 
         # pull current state
-        state: Optional[Tuple[BookingContext, SQLiteSession]] = get_state(user_id)
+        state: Optional[Tuple[BookingContext, SQLiteSession]] = await get_state(user_id)
         if not state:
             logger.info(f"idle: no state for {user_id}")
             return
