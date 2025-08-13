@@ -61,7 +61,7 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
 
     error = _validate_step(ctx, None)
     if error:
-        return ToolResult(public_text=error, ctx_patch={})
+        return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
     gender = ctx.gender or "male"
 
@@ -71,6 +71,7 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
             return ToolResult(
                 public_text="عذراً، لا توجد خدمات متاحة لهذا القسم حالياً.",
                 ctx_patch={},
+                version=ctx.version,
             )
 
         patch = {
@@ -82,11 +83,13 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
             public_text=json.dumps(services, ensure_ascii=False),
             ctx_patch=patch,
             private_data=services,
+            version=ctx.version,
         )
     except Exception as e:
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في جلب الخدمات: {str(e)}",
             ctx_patch={},
+            version=ctx.version,
         )
 
 
@@ -100,13 +103,13 @@ async def check_availability(
 
     error = _validate_step(ctx, BookingStep.SELECT_DATE)
     if error:
-        return ToolResult(public_text=error, ctx_patch={})
+        return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
     if not ctx.selected_services_pm_si:
-        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={}, version=ctx.version)
 
     if not date:
-        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={}, version=ctx.version)
 
     parsed_date = booking_tool.parse_natural_date(date, ctx.user_lang or "ar")
     date = parsed_date or date
@@ -121,6 +124,7 @@ async def check_availability(
             return ToolResult(
                 public_text=f"عذراً، لا توجد أوقات متاحة في تاريخ {date}.",
                 ctx_patch={},
+                version=ctx.version,
             )
 
         human_times = [s.get("time") for s in slots if s.get("time")]
@@ -135,11 +139,12 @@ async def check_availability(
             "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_DATE][0],
         }
 
-        return ToolResult(public_text=text, ctx_patch=patch, private_data=slots)
+        return ToolResult(public_text=text, ctx_patch=patch, private_data=slots, version=ctx.version)
     except BookingFlowError as e:
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في فحص الأوقات: {str(e)}",
             ctx_patch={},
+            version=ctx.version,
         )
 
 
@@ -156,22 +161,22 @@ async def suggest_employees(
 
     error = _validate_step(ctx, BookingStep.SELECT_TIME)
     if error:
-        return ToolResult(public_text=error, ctx_patch={})
+        return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
     if not ctx.selected_services_pm_si:
-        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={}, version=ctx.version)
 
     if not ctx.appointment_date:
-        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={}, version=ctx.version)
 
     if not time:
-        return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={}, version=ctx.version)
 
     parsed_time = booking_tool.parse_natural_time(time)
     time = parsed_time or time
 
     if not ctx.available_times:
-        return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={}, version=ctx.version)
 
     times = {t.get("time") for t in ctx.available_times if t.get("time")}
     if time not in times:
@@ -179,6 +184,7 @@ async def suggest_employees(
         return ToolResult(
             public_text=f"عذراً، الوقت {time} غير متاح. الأوقات المتاحة: {human_times}",
             ctx_patch={},
+            version=ctx.version,
         )
 
     gender = ctx.gender or "male"
@@ -191,6 +197,7 @@ async def suggest_employees(
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في جلب الأطباء: {str(e)}",
             ctx_patch={},
+            version=ctx.version,
         )
 
     if not employees:
@@ -198,6 +205,7 @@ async def suggest_employees(
         return ToolResult(
             public_text=f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}. الأوقات المتاحة الأخرى: {alternatives}",
             ctx_patch={},
+            version=ctx.version,
         )
 
     patch = {
@@ -219,6 +227,7 @@ async def suggest_employees(
         public_text=message,
         ctx_patch=patch,
         private_data=message_data,
+        version=ctx.version,
     )
 
 
@@ -235,19 +244,19 @@ async def create_booking(
 
     error = _validate_step(ctx, BookingStep.SELECT_EMPLOYEE)
     if error:
-        return ToolResult(public_text=error, ctx_patch={})
+        return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
     if not ctx.selected_services_pm_si:
-        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب اختيار الخدمات أولاً.", ctx_patch={}, version=ctx.version)
 
     if not ctx.appointment_date:
-        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={}, version=ctx.version)
 
     if not ctx.appointment_time:
-        return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={}, version=ctx.version)
 
     if not employee_pm_si:
-        return ToolResult(public_text="عذراً، يجب اختيار الطبيب أولاً.", ctx_patch={})
+        return ToolResult(public_text="عذراً، يجب اختيار الطبيب أولاً.", ctx_patch={}, version=ctx.version)
 
     employee = next(
         (emp for emp in (ctx.offered_employees or []) if emp.get("pm_si") == employee_pm_si),
@@ -288,6 +297,7 @@ async def create_booking(
                 + ", ".join(human_times),
                 ctx_patch=patch,
                 private_data={"available_times": slots},
+                version=ctx.version,
             )
     except BookingFlowError:
         # If availability check fails, proceed to booking attempt
@@ -300,6 +310,7 @@ async def create_booking(
             return ToolResult(
                 public_text="عذراً، نحتاج معلوماتك الشخصية لإكمال الحجز. ما اسمك ورقم هاتفك؟",
                 ctx_patch=patch,
+                version=ctx.version,
             )
 
         customer_info = {
@@ -339,6 +350,7 @@ async def create_booking(
             public_text=json.dumps(result, ensure_ascii=False),
             ctx_patch=patch,
             private_data=result,
+            version=ctx.version,
         )
 
     except BookingFlowError as e:
@@ -362,17 +374,20 @@ async def create_booking(
                 + ", ".join(human_times),
                 ctx_patch=patch,
                 private_data={"available_times": slots},
+                version=ctx.version,
             )
         except BookingFlowError:
             return ToolResult(
                 public_text=f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}",
                 ctx_patch=patch,
+                version=ctx.version,
             )
 
 
 @function_tool
 async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
     """Reset the booking process and start over."""
+    ctx = wrapper.context
     patch = {
         "selected_services_pm_si": None,
         "selected_services_data": None,
@@ -390,6 +405,7 @@ async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> ToolResul
     return ToolResult(
         public_text="تم إعادة تعيين عملية الحجز. يمكنك البدء من جديد! 😊",
         ctx_patch=patch,
+        version=ctx.version,
     )
 
 
@@ -409,7 +425,7 @@ async def revert_to_step(
     controller = StepController(ctx)
     start_version = ctx.version
     step_enum = BookingStep(step)
-    controller.invalidate_downstream_fields(step_enum)
+    controller.invalidate_downstream_fields(step_enum, expected_version=ctx.version)
     fields = StepController._DOWNSTREAM_FIELDS.get(step_enum, [])
     patch: Dict[str, Optional[str | List[str] | float | bool]] = {}
     if fields:
@@ -424,7 +440,11 @@ async def revert_to_step(
         BookingStep.SELECT_EMPLOYEE: "تم الرجوع إلى خطوة اختيار الطبيب. يرجى إعادة اختيار الطبيب.",
     }
 
-    return ToolResult(public_text=msg_map.get(step_enum, ""), ctx_patch=patch)
+    return ToolResult(
+        public_text=msg_map.get(step_enum, ""),
+        ctx_patch=patch,
+        version=ctx.version,
+    )
 
 
 @function_tool
@@ -466,7 +486,9 @@ async def update_booking_context(
     updates_dict.pop("next_booking_step", None)
 
     if not updates_dict:
-        return ToolResult(public_text="لم يتم تقديم أي تحديثات.", ctx_patch={})
+        return ToolResult(
+            public_text="لم يتم تقديم أي تحديثات.", ctx_patch={}, version=ctx.version
+        )
 
     messages: list[str] = []
     controller = StepController(ctx)
@@ -480,7 +502,9 @@ async def update_booking_context(
         if field in updates_dict and getattr(ctx, field) != updates_dict[field]:
             step = StepController._FIELD_TO_STEP[field]
             if step in msg_map:
-                controller.invalidate_downstream_fields(step)
+                controller.invalidate_downstream_fields(
+                    step, expected_version=ctx.version
+                )
                 messages.append(msg_map[step])
                 controller.revert_to(start_version)
 
@@ -488,7 +512,7 @@ async def update_booking_context(
     if messages:
         text += ". " + " ".join(messages)
 
-    return ToolResult(public_text=text, ctx_patch=updates_dict)
+    return ToolResult(public_text=text, ctx_patch=updates_dict, version=ctx.version)
 
 
 __all__ = [

@@ -7,6 +7,7 @@ class ToolResult:
     public_text: str
     ctx_patch: Dict[str, Any] | None = None
     private_data: Any = None
+    version: int | None = None
 
     def __str__(self) -> str:  # pragma: no cover - simple
         return self.public_text
