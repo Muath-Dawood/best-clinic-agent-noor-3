@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any
 import httpx
 
 from src.app.parse_phone_number import parse_whatsapp_to_local_palestinian_number
+from src.app.logging import get_logger
 
 # --- Best Clinic official lookup API (working path) ---
 BEST_CLINIC_API_BASE = (
@@ -13,13 +14,17 @@ BEST_CLINIC_API_TOKEN = os.getenv("BEST_CLINIC_API_TOKEN") or ""
 PATIENT_LOOKUP_TIMEOUT = float(os.getenv("PATIENT_LOOKUP_TIMEOUT", "10"))
 BEST_CLINIC_API_PATH = "/api-ai-get-customer-details"
 
+logger = get_logger("noor.lookup")
 
-async def lookup_api(phone: str) -> Optional[Dict[str, Any]]:
+
+async def lookup_api(phone: str) -> Dict[str, Any]:
     """
     Calls:  {BEST_CLINIC_API_BASE}/api-ai-get-customer-details
     Query:  identifier_type=PHONE, identifier_value=<05XXXXXXXX>, includes_data=details
     Returns normalized shape:
       {"details": {...}, "appointments": {"data": []}}
+
+    Raises httpx.HTTPError, ValueError or LookupError on failure.
     """
     url = f"{BEST_CLINIC_API_BASE}{BEST_CLINIC_API_PATH}"
     params = {
@@ -35,18 +40,32 @@ async def lookup_api(phone: str) -> Optional[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=PATIENT_LOOKUP_TIMEOUT) as client:
             r = await client.get(url, params=params, headers=headers or None)
             r.raise_for_status()
-            payload = r.json()
-    except Exception:
-        return None
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            f"lookup_api HTTP {e.response.status_code} for {phone}",
+        )
+        raise
+    except httpx.RequestError as e:
+        logger.error(f"lookup_api request failed for {phone}: {e}")
+        raise
+
+    try:
+        payload = r.json()
+    except ValueError as e:
+        logger.error(f"lookup_api invalid JSON for {phone}: {e}")
+        raise
 
     # Expect: {"status": true, "data": {"details": {...}}}
     if not (isinstance(payload, dict) and payload.get("status") is True):
-        return None
+        status_val = payload.get("status")
+        logger.error(f"lookup_api failed for {phone}: status={status_val}")
+        raise LookupError(f"lookup_api error status for {phone}: {status_val}")
 
     data = payload.get("data") or {}
     details = data.get("details") or {}
     if not isinstance(details, dict):
-        return None
+        logger.error(f"lookup_api details missing for {phone}")
+        raise LookupError(f"lookup_api malformed details for {phone}")
 
     # Endpoint doesn't return appointments; keep a stable, forward-compatible shape.
     return {"details": details, "appointments": {"data": []}}
