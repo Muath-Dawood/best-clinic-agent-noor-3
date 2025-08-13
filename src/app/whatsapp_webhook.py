@@ -54,8 +54,8 @@ async def _send_whatsapp(chat_id: str, text: str) -> None:
                         backoff *= 2
                         continue
                 return
-            except Exception as e:
-                logger.error(f"WhatsApp send failed: {e}")
+            except Exception:
+                logger.exception("WhatsApp send failed on attempt %d", attempt)
                 if attempt < retries:
                     await asyncio.sleep(backoff)
                     backoff *= 2
