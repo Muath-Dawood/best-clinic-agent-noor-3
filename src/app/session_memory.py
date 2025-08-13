@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from agents import Agent, Runner, SQLiteSession, ItemHelpers, RunConfig
 
-TZ_NAME = "Asia/Jerusalem"
+TZ_NAME = "Asia/Hebron"
 tz = pytz.timezone(TZ_NAME)
 
 
