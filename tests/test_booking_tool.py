@@ -128,3 +128,14 @@ def test_parse_natural_datetime_extracts_time(monkeypatch):
     text = "الخميس الساعة 5 مساءً"
     assert booking_tool.parse_natural_date(text, "ar") == "2024-01-04"
     assert booking_tool.parse_natural_time(text) == "17:00"
+
+
+@pytest.mark.asyncio
+async def test_get_available_times_normalizes_and_filters(monkeypatch):
+    async def fake_api_call(endpoint, data, cus_sec_pm_si):
+        return {"data": ["09:00", "", " \t", {"time": "10:00"}, {"time": ""}, None, 123]}
+
+    monkeypatch.setattr(booking_tool, "_make_api_call", fake_api_call)
+
+    result = await booking_tool.get_available_times("2024-06-01", ["svc1"], "male")
+    assert result == [{"time": "09:00"}, {"time": "10:00"}]
