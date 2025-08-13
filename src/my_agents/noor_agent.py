@@ -36,10 +36,7 @@ def _dynamic_footer(ctx: BookingContext) -> str:
 
 def _build_noor_agent(ctx: BookingContext) -> Agent:
     instructions = SYSTEM_PROMPT + "\n\n" + _dynamic_footer(ctx)
-    tools = []
-    tools += kb_tool_for_noor()
-    tools += update_booking_context  # Allow context updates
-    tools += booking_tool_for_noor()  # Add booking capabilities
+    tools = [update_booking_context, kb_tool_for_noor(), booking_tool_for_noor()]
 
     return Agent(name="Noor", instructions=instructions, model="gpt-4o", tools=tools)
 

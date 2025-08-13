@@ -311,7 +311,7 @@ async def reset_booking(wrapper: RunContextWrapper[BookingContext]) -> str:
     return "تم إعادة تعيين عملية الحجز. يمكنك البدء من جديد! 😊"
 
 
-@function_tool()
+@function_tool
 async def update_booking_context(
     wrapper: RunContextWrapper[BookingContext], updates: BookingContextUpdate
 ) -> str:
