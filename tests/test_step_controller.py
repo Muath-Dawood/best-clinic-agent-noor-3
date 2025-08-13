@@ -2,7 +2,11 @@ import json
 import pytest
 
 from src.app.context_models import BookingContext, BookingStep
-from src.tools.booking_agent_tool import update_booking_context, BookingContextUpdate
+from src.tools.booking_agent_tool import (
+    update_booking_context,
+    BookingContextUpdate,
+    revert_to_step,
+)
 from src.workflows.step_controller import StepController
 
 
@@ -35,3 +39,41 @@ def test_apply_patch_rejects_downstream_fields():
     controller = StepController(ctx)
     with pytest.raises(ValueError):
         controller.apply_patch({"appointment_date": "2024-06-01"})
+
+
+@pytest.mark.asyncio
+async def test_revert_to_step_clears_downstream_fields():
+    ctx = BookingContext(
+        selected_services_pm_si=["svc1"],
+        appointment_date="2024-06-01",
+        appointment_time="10:00",
+        employee_pm_si="emp1",
+        employee_name="Dr. X",
+    )
+    wrapper = DummyWrapper(ctx)
+    payload = json.dumps({"step": "select_date"})
+    result = await revert_to_step.on_invoke_tool(wrapper, payload)
+    StepController(ctx).apply_patch(result.ctx_patch)
+    assert ctx.appointment_date is None
+    assert ctx.appointment_time is None
+    assert ctx.employee_pm_si is None
+    assert ctx.next_booking_step == BookingStep.SELECT_DATE
+    assert "اختيار التاريخ" in result.public_text
+
+
+@pytest.mark.asyncio
+async def test_update_booking_context_invalidates_downstream():
+    ctx = BookingContext(
+        selected_services_pm_si=["svc1"],
+        appointment_date="2024-06-01",
+        appointment_time="09:00",
+        employee_pm_si="emp1",
+    )
+    wrapper = DummyWrapper(ctx)
+    updates = BookingContextUpdate(appointment_date="2024-06-05")
+    payload = json.dumps({"updates": updates.model_dump()})
+    result = await update_booking_context.on_invoke_tool(wrapper, payload)
+    StepController(ctx).apply_patch(result.ctx_patch)
+    assert ctx.appointment_time is None
+    assert ctx.employee_pm_si is None
+    assert "اختيار الوقت والطبيب" in result.public_text
