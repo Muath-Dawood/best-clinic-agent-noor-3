@@ -11,6 +11,7 @@ from src.tools.booking_agent_tool import (
     suggest_employees,
 )
 from src.workflows.step_controller import StepController
+from src.data.services import MEN_SERVICES
 
 
 class DummyWrapper:
@@ -123,7 +124,7 @@ async def test_update_booking_context_invalidates_downstream():
 
 @pytest.mark.asyncio
 async def test_check_availability_stores_available_times(monkeypatch):
-    ctx = BookingContext(selected_services_pm_si=["svc1"])
+    ctx = BookingContext(selected_services_pm_si=[MEN_SERVICES[0]["pm_si"]])
     StepController(ctx).apply_patch({})
     wrapper = DummyWrapper(ctx)
 
@@ -146,7 +147,7 @@ async def test_check_availability_stores_available_times(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_check_availability_no_slots_prevents_progress(monkeypatch):
-    ctx = BookingContext(selected_services_pm_si=["svc1"])
+    ctx = BookingContext(selected_services_pm_si=[MEN_SERVICES[0]["pm_si"]])
     StepController(ctx).apply_patch({})
     wrapper = DummyWrapper(ctx)
 
