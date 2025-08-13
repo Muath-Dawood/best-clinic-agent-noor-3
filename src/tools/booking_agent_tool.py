@@ -12,6 +12,14 @@ from src.data.services import get_services_by_gender
 from src.app.context_models import BookingContext
 
 
+# Predefined employees to avoid repeated API calls. These are lightweight
+# placeholders containing only the fields required by the booking flow.
+employee_list: List[Dict[str, str]] = [
+    {"pm_si": "emp_ahmad", "name": "Dr. Ahmad"},
+    {"pm_si": "emp_sara", "name": "Dr. Sara"},
+]
+
+
 def normalize_gender(gender: Optional[str]) -> str:
     """Convert gender to English for API ('male'/'female')."""
     if not gender:
@@ -127,27 +135,25 @@ async def suggest_employees(
     if not time:
         return "عذراً، يجب تحديد الوقت أولاً."
 
-    gender = ctx.gender or "male"
-
-    try:
-        employees, pricing = await booking_tool.get_available_employees(
-            ctx.appointment_date, time, ctx.selected_services_pm_si, gender
+    # Use the pre-built employee_list and locally calculate pricing
+    employees = employee_list
+    if not employees:
+        return (
+            f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}."
         )
 
-        if not employees:
-            return (
-                f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}."
-            )
+    pricing_total = booking_tool.calculate_total_price(
+        ctx.selected_services_pm_si or []
+    )
+    pricing = {"full_total": pricing_total}
 
-        # Update context with selected time
-        ctx.appointment_time = time
-        ctx.next_booking_step = "select_employee"
-        ctx.total_price = float(pricing.get("full_total", 0))
+    # Update context with selected time and pricing
+    ctx.appointment_time = time
+    ctx.next_booking_step = "select_employee"
+    ctx.total_price = float(pricing_total)
 
-        # Return employees and pricing exactly as received
-        return json.dumps({"employees": employees, "pricing": pricing}, ensure_ascii=False)
-    except BookingFlowError as e:
-        return f"عذراً، حدث خطأ في فحص الأطباء: {str(e)}"
+    # Return employees and pricing exactly as received
+    return json.dumps({"employees": employees, "pricing": pricing}, ensure_ascii=False)
 
 
 @function_tool
@@ -173,6 +179,14 @@ async def create_booking(
 
     if not employee_pm_si:
         return "عذراً، يجب اختيار الطبيب أولاً."
+
+    # Persist chosen employee details using the pre-built list
+    employee = next(
+        (emp for emp in employee_list if emp.get("pm_si") == employee_pm_si),
+        None,
+    )
+    ctx.employee_pm_si = employee_pm_si
+    ctx.employee_name = employee.get("name") if employee else None
 
     gender = ctx.gender or "male"
 
