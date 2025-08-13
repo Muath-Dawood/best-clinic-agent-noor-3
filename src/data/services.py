@@ -3,6 +3,10 @@ Hard-coded bookable services for Best Clinic 24.
 This eliminates the need to call the categories API during booking flow.
 """
 
+from typing import Optional
+
+from src.app.context_models import BookingContext
+
 # Men's services (using men's cus_sec_pm_si)
 MEN_SERVICES = [
     {
@@ -106,16 +110,26 @@ def find_service_by_pm_si(pm_si: str) -> dict | None:
     return None
 
 
-def get_service_summary(services: list) -> str:
+def get_service_summary(services: list, ctx: Optional[BookingContext] = None) -> str:
     """Get a human-readable summary of services for display."""
     if not services:
         return "لا توجد خدمات متاحة"
+
+    currency = (ctx.price_currency if ctx and ctx.price_currency else "NIS").upper()
+    symbol_map = {
+        "NIS": "₪",
+        "ILS": "₪",
+        "KWD": "د.ك",
+        "USD": "$",
+        "EUR": "€",
+    }
+    symbol = symbol_map.get(currency, "₪")
 
     summaries = []
     for service in services:
         price = service['price']
         duration = service['duration']
         title = service['title']
-        summaries.append(f"• {title} - {price} د.ك ({duration})")
+        summaries.append(f"• {title} - {price} {symbol} ({duration})")
 
     return "\n".join(summaries)
