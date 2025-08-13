@@ -25,7 +25,11 @@ async def test_tool_call_and_step_transition_logged(tmp_path):
     hooks = StepControllerRunHooks()
     wrapper = DummyWrapper()
     tool = DummyTool()
-    result = ToolResult(public_text="ok", ctx_patch={"selected_services_pm_si": ["svc1"]})
+    result = ToolResult(
+        public_text="ok",
+        ctx_patch={"selected_services_pm_si": ["svc1"]},
+        version=wrapper.context.version,
+    )
 
     await hooks.on_tool_end(wrapper, None, tool, result)
 

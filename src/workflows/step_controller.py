@@ -173,8 +173,27 @@ class StepController:
                     )
 
     # ------------------------------------------------------------------
-    def apply_patch(self, patch: Dict[str, Any], *, invalidate: bool = True) -> None:
-        """Apply ``patch`` to the context and record a new version."""
+    def apply_patch(
+        self,
+        patch: Dict[str, Any],
+        *,
+        invalidate: bool = True,
+        expected_version: int | None = None,
+    ) -> None:
+        """Apply ``patch`` to the context and record a new version.
+
+        Args:
+            patch: Mapping of field names to new values.
+            invalidate: Whether to invalidate downstream fields.
+            expected_version: If provided, ``ctx.version`` must match this value
+                or a :class:`ValueError` is raised. This helps prevent applying
+                patches generated for an outdated context.
+        """
+
+        if expected_version is not None and expected_version != self.ctx.version:
+            raise ValueError(
+                f"Context version mismatch: expected {expected_version}, got {self.ctx.version}"
+            )
 
         patch = {k: v for k, v in patch.items() if k != "next_booking_step"}
 
@@ -193,7 +212,7 @@ class StepController:
             self._validate_prereqs(patch)
             step = self._derive_step_from_patch(patch)
             if step is not None:
-                self.invalidate_downstream_fields(step)
+                self.invalidate_downstream_fields(step, expected_version=self.ctx.version)
 
         for name, value in patch.items():
             setattr(self.ctx, name, value)
@@ -236,14 +255,18 @@ class StepController:
         log_event("revert_context", {"version": version})
 
     # ------------------------------------------------------------------
-    def invalidate_downstream_fields(self, step: BookingStep) -> None:
+    def invalidate_downstream_fields(
+        self, step: BookingStep, *, expected_version: int | None = None
+    ) -> None:
         """Clear fields for ``step`` and all downstream steps."""
 
         fields = self._DOWNSTREAM_FIELDS.get(step, [])
         patch = {name: self._defaults[name] for name in fields}
         if patch:
             log_event("invalidate_downstream", {"step": step, "fields": fields})
-            self.apply_patch(patch, invalidate=False)
+            self.apply_patch(
+                patch, invalidate=False, expected_version=expected_version
+            )
 
 
 class StepControllerRunHooks(RunHooksBase[BookingContext, Agent]):
@@ -258,7 +281,9 @@ class StepControllerRunHooks(RunHooksBase[BookingContext, Agent]):
     ) -> None:
         log_event("tool_call", {"tool": getattr(tool, "name", str(tool))})
         if isinstance(result, ToolResult) and result.ctx_patch:
-            StepController(context.context).apply_patch(result.ctx_patch)
+            StepController(context.context).apply_patch(
+                result.ctx_patch, expected_version=result.version
+            )
 
 
 __all__ = ["StepController", "StepControllerRunHooks"]
