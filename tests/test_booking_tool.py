@@ -96,3 +96,35 @@ def test_parse_natural_date_returns_none_for_past_date(monkeypatch):
 
     result = booking_tool.parse_natural_date("2023-12-31", "en")
     assert result is None
+
+
+def test_parse_natural_date_arabic_weekdays(monkeypatch):
+    class FixedDateTime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2024, 1, 1, tzinfo=tz)
+
+    monkeypatch.setattr(booking_tool_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        booking_tool_module, "parse_date", lambda text, settings=None, languages=None: None
+    )
+
+    assert booking_tool.parse_natural_date("الاثنين القادم", "ar") == "2024-01-08"
+    assert booking_tool.parse_natural_date("يوم الجمعة", "ar") == "2024-01-05"
+
+
+def test_parse_natural_datetime_extracts_time(monkeypatch):
+    class FixedDateTime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2024, 1, 1, tzinfo=tz)
+
+    def fake_parse(text, settings=None, languages=None):
+        return dt.datetime(2024, 1, 4, 17, 0)
+
+    monkeypatch.setattr(booking_tool_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(booking_tool_module, "parse_date", fake_parse)
+
+    text = "الخميس الساعة 5 مساءً"
+    assert booking_tool.parse_natural_date(text, "ar") == "2024-01-04"
+    assert booking_tool.parse_natural_time(text) == "17:00"
