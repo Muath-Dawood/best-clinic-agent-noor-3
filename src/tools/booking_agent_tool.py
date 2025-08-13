@@ -19,14 +19,6 @@ from src.tools.tool_result import ToolResult
 from src.workflows.step_controller import StepController
 
 
-# Predefined employees to avoid repeated API calls. These are lightweight
-# placeholders containing only the fields required by the booking flow.
-employee_list: List[Dict[str, str]] = [
-    {"pm_si": "emp_ahmad", "name": "Dr. Ahmad"},
-    {"pm_si": "emp_sara", "name": "Dr. Sara"},
-]
-
-
 class BookingContextUpdate(BaseModel):
     """Subset of :class:`BookingContext` fields that can be updated."""
 
@@ -178,31 +170,56 @@ async def suggest_employees(
     parsed_time = booking_tool.parse_natural_time(time)
     time = parsed_time or time
 
-    employees = employee_list
-    if not employees:
+    if not ctx.available_times:
+        return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={})
+
+    times = {t.get("time") for t in ctx.available_times if t.get("time")}
+    if time not in times:
+        human_times = ", ".join(sorted(times))
         return ToolResult(
-            public_text=f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}.",
+            public_text=f"عذراً، الوقت {time} غير متاح. الأوقات المتاحة: {human_times}",
             ctx_patch={},
         )
 
-    pricing_total = booking_tool.calculate_total_price(
-        ctx.selected_services_pm_si or []
-    )
-    pricing = {"full_total": pricing_total}
+    gender = ctx.gender or "male"
+
+    try:
+        employees, checkout_summary = await booking_tool.get_available_employees(
+            ctx.appointment_date, time, ctx.selected_services_pm_si, gender
+        )
+    except BookingFlowError as e:
+        return ToolResult(
+            public_text=f"عذراً، حدث خطأ في جلب الأطباء: {str(e)}",
+            ctx_patch={},
+        )
+
+    if not employees:
+        alternatives = ", ".join(sorted(times))
+        return ToolResult(
+            public_text=f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}. الأوقات المتاحة الأخرى: {alternatives}",
+            ctx_patch={},
+        )
 
     patch = {
         "appointment_time": time,
+        "offered_employees": employees,
+        "checkout_summary": checkout_summary,
         "next_booking_step": BOOKING_STEP_TRANSITIONS[BookingStep.SELECT_TIME][0],
-        "total_price": float(pricing_total),
     }
 
-    data = {"employees": employees, "pricing": pricing}
-
-    message = json.dumps(data, ensure_ascii=False)
+    message_data = {"employees": employees, "checkout_summary": checkout_summary}
     if ctx.appointment_time and ctx.appointment_time != time:
-        message = "تم تحديث الوقت. يرجى اختيار الطبيب من جديد. " + message
+        prefix = "تم تحديث الوقت. يرجى اختيار الطبيب من جديد. "
+    else:
+        prefix = ""
 
-    return ToolResult(public_text=message, ctx_patch=patch, private_data=data)
+    message = prefix + json.dumps(message_data, ensure_ascii=False)
+
+    return ToolResult(
+        public_text=message,
+        ctx_patch=patch,
+        private_data=message_data,
+    )
 
 
 @function_tool
@@ -233,7 +250,7 @@ async def create_booking(
         return ToolResult(public_text="عذراً، يجب اختيار الطبيب أولاً.", ctx_patch={})
 
     employee = next(
-        (emp for emp in employee_list if emp.get("pm_si") == employee_pm_si),
+        (emp for emp in (ctx.offered_employees or []) if emp.get("pm_si") == employee_pm_si),
         None,
     )
     patch = {
