@@ -14,10 +14,22 @@ from src.app.context_models import BookingContext
 from src.app.output_sanitizer import redact_tokens
 from src.workflows.step_controller import StepControllerRunHooks
 from src.app.event_log import log_event, set_turn_id
+from datetime import datetime
+import pytz
 
 
 def _dynamic_footer(ctx: BookingContext) -> str:
     lines = []
+    try:
+        tz_name = (ctx.tz or "Asia/Hebron") if hasattr(ctx, "tz") else "Asia/Hebron"
+        now = datetime.now(pytz.timezone(tz_name))
+        lines.append("### NOW")
+        lines.append(f"today_date_iso={now.date().isoformat()}")
+        lines.append(f"now_time_24h={now.strftime('%H:%M')}")
+        lines.append(f"timezone={tz_name}")
+        lines.append("### END NOW")
+    except Exception:
+        pass
     if ctx and (ctx.user_name or ctx.user_phone):
         lines += [
             "### THIS SECTION IS THE RESULT OF DYNAMIC INJECTION OF INTERNAL CONTEXT (do not reveal to user; use the info naturally)"
