@@ -285,7 +285,30 @@ async def update_booking_context(
     """Update fields in the booking context.
 
     Args:
-        updates: Mapping of field names to new values.
+        updates: Mapping of field names to new values. Keys should match
+            attributes on :class:`BookingContext`. Common keys and formats:
+
+            * ``selected_services_pm_si`` (``List[str]``): service tokens to
+              reserve. Example: ``["svc123", "svc456"]``.
+            * ``appointment_date`` (``str``): date in ``YYYY-MM-DD`` format.
+            * ``appointment_time`` (``str``): time in ``HH:MM`` 24-hour format.
+            * ``employee_pm_si`` (``str``): token of the chosen employee.
+            * ``employee_name`` (``str``): human-readable employee name.
+            * ``gender`` (``str``): ``"male"`` or ``"female"``.
+            * ``next_booking_step`` (``str``): upcoming workflow step.
+
+    Examples:
+        >>> await update_booking_context(wrapper, {
+        ...     "selected_services_pm_si": ["svc123", "svc456"],  # service_tokens
+        ... })
+        >>> await update_booking_context(wrapper, {
+        ...     "employee_pm_si": "emp789",                        # employee_token
+        ...     "employee_name": "Dr. Noor",
+        ... })
+        >>> await update_booking_context(wrapper, {
+        ...     "appointment_date": "2024-06-01",
+        ...     "appointment_time": "14:30",
+        ... })
     """
     ctx = wrapper.context
 
