@@ -46,12 +46,15 @@ class BookingContext:
     # appointment details
     appointment_date: Optional[str] = None  # YYYY-MM-DD format
     appointment_time: Optional[str] = None  # HH:MM format
+    available_times: Optional[List[Dict]] = None  # available time slots
     employee_pm_si: Optional[str] = None  # selected employee token
     employee_name: Optional[str] = None  # human-readable employee name
+    offered_employees: Optional[List[Dict]] = None  # employees offered to user
 
     # pricing
     total_price: Optional[float] = None
     price_currency: str = "NIS"
+    checkout_summary: Optional[Dict] = None  # summary of booking details
 
     # booking status
     booking_confirmed: bool = False
