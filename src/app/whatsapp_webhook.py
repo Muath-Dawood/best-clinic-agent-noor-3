@@ -62,11 +62,14 @@ async def _send_whatsapp(chat_id: str, text: str) -> None:
                     if 200 <= resp.status_code < 300:
                         success = True
                         break
-                    # Non-2xx response: log body and status
+                    # Non-2xx response: log body, status, and diagnostics
                     logger.error(
-                        "WhatsApp send failed: status=%s body=%s",
+                        "WhatsApp send failed: status=%s body=%s payload_len=%d req_headers=%s resp_headers=%s",
                         resp.status_code,
                         resp.text,
+                        len(chunk),
+                        resp.request.headers,
+                        resp.headers,
                     )
                     if resp.status_code in {429} or resp.status_code >= 500:
                         if attempt < retries:
