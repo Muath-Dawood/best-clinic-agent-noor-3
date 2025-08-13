@@ -28,7 +28,7 @@ class BookingContext:
     user_name: Optional[str] = None
     user_phone: Optional[str] = None
     user_lang: Optional[str] = None
-    tz: str = "Asia/Jerusalem"
+    tz: str = "Asia/Hebron"
 
     # gender and section (determines available services)
     gender: Optional[str] = None  # 'male'/'female' or 'ذكر'/'أنثى'
