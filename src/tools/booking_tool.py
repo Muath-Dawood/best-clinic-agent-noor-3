@@ -243,14 +243,33 @@ class BookingTool:
 
     async def get_available_times(
         self, date: str, services_pm_si: List[str], gender: str
-    ) -> List[str]:
-        """Get available times for a specific date and services."""
+    ) -> List[Dict]:
+        """Get available times for a specific date and services.
+
+        The API may return a list containing time strings or objects. This
+        method normalizes the response so that callers always receive a list of
+        dictionaries with a ``time`` key and filters out any invalid entries.
+        """
         cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
 
         data = {"date": date, "services_pm_si[]": services_pm_si}
 
         result = await self._make_api_call("BOKGTAVBLTIMS", data, cus_sec_pm_si)
-        return result.get("data", [])
+
+        slots: List[Dict] = []
+        for item in result.get("data", []):
+            if isinstance(item, str):
+                time_str = item.strip()
+                if time_str:
+                    slots.append({"time": time_str})
+            elif isinstance(item, dict):
+                time_str = item.get("time")
+                if isinstance(time_str, str):
+                    time_str = time_str.strip()
+                    if time_str:
+                        slots.append({"time": time_str})
+
+        return slots
 
     async def get_available_employees(
         self, date: str, time: str, services_pm_si: List[str], gender: str
