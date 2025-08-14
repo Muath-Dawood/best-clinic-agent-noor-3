@@ -8,6 +8,7 @@ from src.tools.booking_agent_tool import (
     BookingContextUpdate,
     check_availability,
     suggest_employees,
+    create_booking,
 )
 import src.tools.booking_tool as booking_tool_module
 from src.data.services import MEN_SERVICES
@@ -125,3 +126,49 @@ async def test_suggest_employees_handles_empty_employees_and_shows_alternatives(
     assert "لا يوجد أطباء" in result.public_text
     # Should list alternatives without crashing even if no 'times' local var existed
     assert "10:00" in result.public_text or "10:10" in result.public_text
+
+
+class Dummy:
+    def __init__(self, ctx):
+        self.context = ctx
+
+
+@pytest.mark.asyncio
+async def test_create_booking_autoselects_single_offered_doctor(monkeypatch):
+    """If exactly one doctor is offered and none selected yet, create_booking should auto-select and succeed."""
+    ctx = BookingContext(
+        selected_services_pm_si=["svc1"],
+        appointment_date="2025-08-20",
+        appointment_time="18:30",
+        offered_employees=[{"pm_si": "emp1", "name": "دكتور مراد حموري"}],
+    )
+    ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
+    ctx.user_name = "Tester"
+    ctx.user_phone = "+970599000000"
+
+    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None):
+        return {"result": True, "data": {"booking_id": 999}}
+    monkeypatch.setattr(booking_tool_module.booking_tool, "create_booking", ok_create)
+
+    res = await create_booking.on_invoke_tool(Dummy(ctx), json.dumps({}))
+    assert "تم تأكيد حجزك" in res.public_text
+    assert res.ctx_patch.get("employee_pm_si") == "emp1"
+
+
+@pytest.mark.asyncio
+async def test_update_employee_name_requires_offered_list_not_available_times():
+    """Setting employee_name should require appointment_time + offered_employees, not available_times."""
+    # Case 1: no time yet
+    ctx = BookingContext()
+    res = await update_booking_context.on_invoke_tool(Dummy(ctx), json.dumps({"updates": {"employee_name": "X"}}))
+    assert "اختر الوقت" in res.public_text
+
+    # Case 2: time set but no offered list
+    ctx = BookingContext(appointment_time="18:30")
+    res = await update_booking_context.on_invoke_tool(Dummy(ctx), json.dumps({"updates": {"employee_name": "X"}}))
+    assert "سأعرض الأطباء" in res.public_text
+
+    # Case 3: time set and offered list present → mapping must occur or fail with 'not found in list'
+    ctx = BookingContext(appointment_time="18:30", offered_employees=[{"pm_si": "emp1", "name": "A"}])
+    res = await update_booking_context.on_invoke_tool(Dummy(ctx), json.dumps({"updates": {"employee_name": "A"}}))
+    assert res.ctx_patch.get("employee_pm_si") == "emp1"

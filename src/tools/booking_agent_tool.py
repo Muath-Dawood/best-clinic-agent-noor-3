@@ -3,7 +3,7 @@ Booking Agent Tool - provides functional tools for Noor to handle appointment bo
 Uses the correct @function_tool pattern from Agents SDK.
 """
 
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Optional, Literal, Any
 import json
 import re
 from pydantic import BaseModel, ConfigDict
@@ -331,28 +331,43 @@ async def create_booking(
     if not ctx.appointment_time:
         return ToolResult(public_text="عذراً، يجب تحديد الوقت أولاً.", ctx_patch={}, version=ctx.version)
 
-    emp_pm = employee_pm_si or ctx.employee_pm_si
-    if not emp_pm:
-        return ToolResult(
-            public_text="رجاءً اختر الطبيب من الأسماء المعروضة قبل تأكيد الحجز.",
-            ctx_patch={},
-            version=ctx.version,
-        )
+    target_emp = employee_pm_si or ctx.employee_pm_si
+    if not target_emp:
+        # Auto-select if exactly one doctor is offered and user confirmed
+        offered = ctx.offered_employees or []
+        if len(offered) == 1 and offered[0].get("pm_si"):
+            chosen = offered[0]
+            target_emp = chosen["pm_si"]
+            # Record the selection in context so downstream is consistent
+            patch_pre = {
+                "employee_pm_si": chosen["pm_si"],
+                "employee_name": chosen.get("name"),
+            }
+        else:
+            return ToolResult(
+                public_text="رجاءً اختر الطبيب من الأسماء المعروضة قبل تأكيد الحجز.",
+                ctx_patch={},
+                version=ctx.version,
+            )
     offered = ctx.offered_employees or []
-    if not any(isinstance(e, dict) and e.get("pm_si") == emp_pm for e in offered):
+    if not any(isinstance(e, dict) and e.get("pm_si") == target_emp for e in offered):
         return ToolResult(
             public_text="الطبيب المختار غير موجود ضمن الأطباء المتاحين لهذا الوقت. اختر من القائمة أو جرّب وقتًا آخر.",
             ctx_patch={},
             version=ctx.version,
         )
-    employee = next(
-        (emp for emp in offered if emp.get("pm_si") == emp_pm),
-        None,
-    )
-    patch = {
-        "employee_pm_si": emp_pm,
-        "employee_name": employee.get("name") if employee else None,
-    }
+    employee = next((emp for emp in offered if emp.get("pm_si") == target_emp), None)
+    patch: dict[str, Any] = {}
+    # Merge any pre-selection patch (from auto-select logic)
+    if 'patch_pre' in locals():
+        patch.update(patch_pre)
+    else:
+        patch.update(
+            {
+                "employee_pm_si": target_emp,
+                "employee_name": employee.get("name") if employee else None,
+            }
+        )
 
     gender = ctx.gender or "male"
 
@@ -364,7 +379,7 @@ async def create_booking(
             ctx.selected_services_pm_si,
             gender,
         )
-        if not any(emp.get("pm_si") == emp_pm for emp in current_emps):
+        if not any(emp.get("pm_si") == target_emp for emp in current_emps):
             slots = await booking_tool.get_available_times(
                 ctx.appointment_date, ctx.selected_services_pm_si, gender
             )
@@ -409,14 +424,14 @@ async def create_booking(
     chat_id = getattr(ctx, "chat_id", "")
     services_key = ",".join(sorted(ctx.selected_services_pm_si or []))
     idempotency_key = (
-        f"{chat_id}-{ctx.appointment_date}-{ctx.appointment_time}-{emp_pm}-{services_key}"
+        f"{chat_id}-{ctx.appointment_date}-{ctx.appointment_time}-{target_emp}-{services_key}"
     )
 
     try:
         result = await booking_tool.create_booking(
             ctx.appointment_date,
             ctx.appointment_time,
-            emp_pm,
+            target_emp,
             ctx.selected_services_pm_si,
             customer_info,
             gender,
@@ -604,6 +619,33 @@ async def update_booking_context(
         if "appointment_time" in updates_dict:
             updates_dict.pop("appointment_time", None)
             messages.append("لا يمكن تحديد الوقت قبل اختيار الخدمة.")
+
+    # Guard: if user is trying to set employee_name, ensure we have a doctor list for the chosen time
+    if "employee_name" in updates_dict and updates_dict.get("employee_name"):
+        if not ctx.appointment_time:
+            return ToolResult(
+                public_text="رجاءً اختر الوقت أولاً، وبعدها سأعرض الأطباء المتاحين لتختار منهم.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        if not ctx.offered_employees:
+            return ToolResult(
+                public_text="بعد اختيار الوقت سأعرض الأطباء المتاحين. قل لي الوقت المناسب وسأعطيك القائمة.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        # proceed to map employee_name → employee_pm_si using offered_employees only
+        name = updates_dict["employee_name"]
+        emps = ctx.offered_employees or []
+        by_name = {e.get("name"): e for e in emps if isinstance(e, dict)}
+        chosen = by_name.get(name)
+        if not chosen:
+            return ToolResult(
+                public_text="عذراً، لم أجد هذا الاسم ضمن الأطباء المعروضين. الرجاء اختيار اسم من القائمة المعروضة.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        updates_dict["employee_pm_si"] = chosen.get("pm_si")
 
     if "employee_pm_si" in updates_dict or "employee_name" in updates_dict:
         pm_si, name, err = _coerce_employee_to_pm_si(
