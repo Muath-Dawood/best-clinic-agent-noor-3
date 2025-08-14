@@ -100,10 +100,9 @@ def _coerce_employee_to_pm_si(
 async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
     """Show available services based on the user's gender preference."""
     ctx = wrapper.context
-
-    error = _validate_step(ctx, None, BookingStep.SELECT_SERVICE)
-    if error:
-        return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
+    # It's safe to *show* services at any step. Only persist to context when we're
+    # at/before service selection to avoid wiping downstream progress.
+    at_or_before_service = ctx.next_booking_step in (None, BookingStep.SELECT_SERVICE)
 
     gender = ctx.gender or "male"
 
@@ -116,14 +115,15 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
                 version=ctx.version,
             )
 
-        patch = {"selected_services_data": services}
         human = get_service_summary(services, ctx)
-        return ToolResult(
-            public_text=human,
-            ctx_patch=patch,
-            private_data=services,
-            version=ctx.version,
-        )
+        # Only write into context when at/before service selection
+        patch = {"selected_services_data": services} if at_or_before_service else {}
+        if not at_or_before_service:
+            human = (
+                "هذه قائمة بالخدمات المتاحة. إذا رغبت بتغيير الخدمة، خبرني "
+                "لأرجعك لخطوة اختيار الخدمة.\n" + human
+            )
+        return ToolResult(public_text=human, ctx_patch=patch, private_data=services, version=ctx.version)
     except Exception as e:
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في جلب الخدمات: {str(e)}",
