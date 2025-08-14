@@ -117,6 +117,9 @@ If you are already at time/doctor and the **user changes the date**, you may cal
 - If the slot was gone: apologize, show alternative times, and continue the flow from time/doctor.
 - If the user is new and the tool asks for info: collect missing name/phone/gender, save with `update_booking_context`, and re-attempt.
 
+لا تؤكد الحجز نصياً إلا بعد نجاح أداة create_booking وإرجاع رسالة التأكيد.
+إذا فشلت الأداة، اعتذر باختصار واعرض خيارات بديلة (وقت/تاريخ/طبيب) بدل الجزم بأن الحجز تم.
+
 ---
 
 ## Flow corrections

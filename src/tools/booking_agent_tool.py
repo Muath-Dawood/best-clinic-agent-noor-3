@@ -333,16 +333,11 @@ async def create_booking(
 
     target_emp = employee_pm_si or ctx.employee_pm_si
     if not target_emp:
-        # Auto-select if exactly one doctor is offered and user confirmed
+        # Auto-select if exactly one doctor is offered
         offered = ctx.offered_employees or []
         if len(offered) == 1 and offered[0].get("pm_si"):
-            chosen = offered[0]
-            target_emp = chosen["pm_si"]
-            # Record the selection in context so downstream is consistent
-            patch_pre = {
-                "employee_pm_si": chosen["pm_si"],
-                "employee_name": chosen.get("name"),
-            }
+            target_emp = offered[0]["pm_si"]
+            chosen_name = offered[0].get("name")
         else:
             return ToolResult(
                 public_text="رجاءً اختر الطبيب من الأسماء المعروضة قبل تأكيد الحجز.",
@@ -356,18 +351,7 @@ async def create_booking(
             ctx_patch={},
             version=ctx.version,
         )
-    employee = next((emp for emp in offered if emp.get("pm_si") == target_emp), None)
     patch: dict[str, Any] = {}
-    # Merge any pre-selection patch (from auto-select logic)
-    if 'patch_pre' in locals():
-        patch.update(patch_pre)
-    else:
-        patch.update(
-            {
-                "employee_pm_si": target_emp,
-                "employee_name": employee.get("name") if employee else None,
-            }
-        )
 
     gender = ctx.gender or "male"
 
@@ -455,7 +439,7 @@ async def create_booking(
             human = (
                 f"✅ تم تأكيد حجزك لـ {services_text} "
                 f"يوم {ctx.appointment_date} الساعة {ctx.appointment_time} "
-                f"مع {ctx.employee_name or 'الطبيب المختار'}. أهلاً وسهلاً!"
+                f"مع {getattr(ctx, 'employee_name', None) or locals().get('chosen_name') or 'الطبيب المختار'}. أهلاً وسهلاً!"
             )
             return ToolResult(
                 public_text=human,
