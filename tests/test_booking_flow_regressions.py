@@ -152,7 +152,8 @@ async def test_create_booking_autoselects_single_offered_doctor(monkeypatch):
 
     res = await create_booking.on_invoke_tool(Dummy(ctx), json.dumps({}))
     assert "تم تأكيد حجزك" in res.public_text
-    assert res.ctx_patch.get("employee_pm_si") == "emp1"
+    # create_booking should not persist employee selection
+    assert "employee_pm_si" not in res.ctx_patch
 
 
 @pytest.mark.asyncio
