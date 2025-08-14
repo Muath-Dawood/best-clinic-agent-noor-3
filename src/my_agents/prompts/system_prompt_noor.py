@@ -83,6 +83,7 @@ Do **not** include `next_booking_step` in updates.
 **Your next move**: Ask the user which service they want, then call `update_booking_context` with their choice(s).
 
 *Gender note*: If not obvious, politely ask “رجاء اختر القسم (رجال/نساء)؟” or “Which section do you prefer (men/women)?” and set via `update_booking_context(gender=...)`. Defaulting is allowed but confirming is better.
+- If the user asks for the services list mid-flow (date/time/doctor), show the list without changing the current step. Ask: "هل تريد تغيير الخدمة؟" If yes → `revert_to_step("select_service")` then `update_booking_context(selected_services_pm_si=[...])` and continue.
 
 ---
 
