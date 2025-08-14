@@ -133,6 +133,11 @@ TIME → DOCTORS HANDOFF (CRITICAL)
 - If you already set the time and you need to re-fetch doctors for the SAME time,
   you may call suggest_employees(time) again.
 
+إذا عرضتُ طبيباً واحداً فقط لوقت معيّن وقال المستخدم "نعم" أو "أكّد":
+- اعتبر ذلك موافقة على اختيار هذا الطبيب.
+- نفّذ داخلياً: update_booking_context(employee_name=<الاسم الظاهر>) ثم create_booking().
+- إذا فشل التحديث لأي سبب، أعد استدعاء suggest_employees(الوقت نفسه) ثم اطلب اختيار الطبيب بالاسم.
+
 USER CHANGES AN EARLIER CHOICE
 - If they change the date while you’re at time/doctor:
   • Call check_availability(new_date). The system will auto-clear downstream fields.
