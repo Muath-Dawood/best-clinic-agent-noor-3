@@ -24,6 +24,7 @@ async def test_create_booking_returns_human_message(monkeypatch):
         employee_name="دكتور مؤمن",
         user_name="مراجع",
         user_phone="0590000000",
+        gender="male",
     )
     StepController(ctx).apply_patch({})
     ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
@@ -54,6 +55,7 @@ async def test_create_booking_no_available_times_single_doctor_no_employee_patch
         employee_name=None,
         user_name="Tester",
         user_phone="0599000000",
+        gender="male",
     )
     ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
 
@@ -69,3 +71,31 @@ async def test_create_booking_no_available_times_single_doctor_no_employee_patch
     assert "employee_pm_si" not in res.ctx_patch
     assert "employee_name" not in res.ctx_patch
     assert res.ctx_patch.get("booking_confirmed") is True
+
+
+@pytest.mark.asyncio
+async def test_create_booking_blocks_when_missing_new_customer_info(monkeypatch):
+    """For new users, create_booking should ask for name/phone before calling API."""
+    called = {"flag": False}
+
+    async def should_not_call(*args, **kwargs):
+        called["flag"] = True
+        return {"result": True}
+
+    monkeypatch.setattr(booking_tool_module.booking_tool, "create_booking", should_not_call)
+
+    ctx = BookingContext(
+        selected_services_pm_si=["svc1"],
+        appointment_date="2025-08-22",
+        appointment_time="12:00",
+        offered_employees=[{"pm_si": "emp1", "name": "Dr. A"}],
+        employee_pm_si="emp1",
+        gender="female",
+        user_name=None,
+        user_phone=None,
+    )
+    ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
+
+    res = await create_booking.on_invoke_tool(W(ctx), json.dumps({}))
+    assert "قبل تأكيد الحجز" in res.public_text
+    assert called["flag"] is False

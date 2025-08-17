@@ -40,6 +40,9 @@ class BookingContextUpdate(BaseModel):
     employee_pm_si: Optional[str] = None
     employee_name: Optional[str] = None
     gender: Optional[str] = None
+    # allow persisting basic customer info for new users
+    user_name: Optional[str] = None
+    user_phone: Optional[str] = None
     next_booking_step: Optional[BookingStep] = None  # ignored
 
 
@@ -392,6 +395,30 @@ async def create_booking(
         )
     patch: dict[str, Any] = {}
 
+    # ---- New customer guard: require minimal customer info ----
+    missing: list[str] = []
+    name_ok = bool(getattr(ctx, "user_name", None) and ctx.user_name.strip())
+    phone_ok = bool(
+        getattr(ctx, "user_phone", None)
+        and isinstance(ctx.user_phone, str)
+        and ctx.user_phone.startswith("05")
+        and len(ctx.user_phone) == 10
+    )
+    gender_ok = ctx.gender in ("male", "female")
+    if not getattr(ctx, "patient_data", None):
+        if not name_ok:
+            missing.append("الاسم")
+        if not phone_ok:
+            missing.append("رقم الهاتف")
+        if not gender_ok:
+            missing.append("القسم (رجال/نساء)")
+    if missing:
+        msg = "قبل تأكيد الحجز، نحتاج: " + "، ".join(missing) + ".\n"
+        msg += (
+            "أرسل لي الاسم الثلاثي ورقم الهاتف بصيغة 05XXXXXXXX، واختر القسم (رجال/نساء) إن لم يكن محدداً."
+        )
+        return ToolResult(public_text=msg, ctx_patch={}, version=ctx.version)
+
     gender = ctx.gender or "male"
 
     # Re-check that the chosen slot is still available
@@ -622,6 +649,34 @@ async def update_booking_context(
     raw = updates.model_dump()
     updates_dict = {k: v for k, v in (raw or {}).items() if v is not None}
     updates_dict.pop("next_booking_step", None)
+
+    # --- User fields (for new customers) ---
+    if "user_name" in updates_dict:
+        name = (updates_dict["user_name"] or "").strip()
+        if not name or len(name) < 2:
+            return ToolResult(
+                public_text="الاسم غير واضح. رجاءً أرسل الاسم الثلاثي كما سيظهر في الحجز.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        updates_dict["user_name"] = name
+
+    if "user_phone" in updates_dict:
+        phone = (updates_dict["user_phone"] or "").strip()
+        digits = "".join(ch for ch in phone if ch.isdigit())
+        if digits.startswith("970") and len(digits) == 12:
+            digits = "0" + digits[3:]
+        if digits.startswith("972") and len(digits) == 12:
+            digits = "0" + digits[3:]
+        if digits.startswith("59") and len(digits) == 9:
+            digits = "0" + digits
+        if not (digits.startswith("05") and len(digits) == 10):
+            return ToolResult(
+                public_text="رقم الهاتف غير صالح. رجاءً أرسل الرقم بصيغة 05XXXXXXXX.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        updates_dict["user_phone"] = digits
 
     messages: list[str] = []
 
