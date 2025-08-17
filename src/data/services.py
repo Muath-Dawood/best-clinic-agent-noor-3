@@ -128,6 +128,18 @@ def coerce_service_identifiers_to_pm_si(identifiers: List[str]) -> Tuple[List[st
     matched: list = []
     unknown: List[str] = []
 
+    # Minimal Arabic synonym map for women's services (expandable)
+    WOMEN_SYNONYMS = {
+        # plain category mention
+        "قسم النسائية": "قسم النسائية",
+        "الصحة النسائية": "قسم النسائية",
+        "النسائية": "قسم النسائية",
+        # with leading "استشارة"
+        "استشارة طبية - الصحة النسائية": "استشارة طبية - قسم النسائية",
+        "استشارة - الصحة النسائية": "استشارة طبية - قسم النسائية",
+        "استشارة نسائية": "استشارة طبية - قسم النسائية",
+    }
+
     for raw in identifiers or []:
         if not isinstance(raw, str) or not raw.strip():
             unknown.append(str(raw))
@@ -148,6 +160,9 @@ def coerce_service_identifiers_to_pm_si(identifiers: List[str]) -> Tuple[List[st
             core = core.split(' - ', 1)[0].strip()
         if core.startswith('•'):
             core = core.lstrip('•').strip()
+
+        # 2.5) normalize known synonyms (women’s titles)
+        core = WOMEN_SYNONYMS.get(core, core)
 
         # 3) try exact or contains match on title / title_en
         svc = next(
