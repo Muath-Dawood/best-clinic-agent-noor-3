@@ -6,6 +6,7 @@ Uses the correct @function_tool pattern from Agents SDK.
 from typing import List, Dict, Optional, Literal, Any
 import json
 import re
+from datetime import datetime, timedelta
 from pydantic import BaseModel, ConfigDict
 from agents import function_tool, RunContextWrapper
 
@@ -22,6 +23,7 @@ from src.app.context_models import (
 )
 from src.tools.tool_result import ToolResult
 from src.workflows.step_controller import StepController
+from src.app.session_memory import tz
 
 
 class BookingContextUpdate(BaseModel):
@@ -149,7 +151,7 @@ async def check_availability(
         controller = StepController(ctx)
         controller.invalidate_downstream_fields(BookingStep.SELECT_DATE, expected_version=ctx.version)
 
-    # Safety: ensure selected services are valid pm_si tokens
+    # Safety 1: ensure selected services are valid pm_si tokens
     invalid = [pm for pm in (ctx.selected_services_pm_si or []) if not find_service_by_pm_si(pm)]
     if invalid:
         return ToolResult(
@@ -164,10 +166,47 @@ async def check_availability(
     if not date:
         return ToolResult(public_text="عذراً، يجب تحديد التاريخ أولاً.", ctx_patch={}, version=ctx.version)
 
+    # Safety 2: robust date handling (never pass the raw phrase to API)
     parsed_date = booking_tool.parse_natural_date(date, ctx.user_lang or "ar")
-    date = parsed_date or date
+    if not parsed_date:
+        lowered = (date or "").strip().lower()
+        weekday_map = {
+            "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
+            "الاثنين": 0, "الإثنين": 0, "الثلاثاء": 1, "الأربعاء": 2, "الاربعاء": 2, "الخميس": 3,
+            "الجمعة": 4, "السبت": 5, "الأحد": 6, "الاحد": 6,
+        }
+        # Fallback: convert weekday phrases like "الاثنين القادم" to next occurrence
+        for name, idx in weekday_map.items():
+            if name in lowered:
+                today = datetime.now(tz).date()
+                days_ahead = (idx - today.weekday() + 7) % 7
+                if "القادم" in lowered or days_ahead == 0:
+                    days_ahead = (days_ahead or 7)
+                parsed_date = (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+                break
+        # Accept explicit ISO date even if parse_natural_date failed (e.g., past date)
+        if not parsed_date:
+            iso_match = re.fullmatch(r"\d{4}-\d{2}-\d{2}", date.strip())
+            if iso_match:
+                parsed_date = iso_match.group(0)
+    if not parsed_date:
+        return ToolResult(
+            public_text="لو سمحت، أعطني تاريخاً محدداً (مثل 2025-08-21) أو يوم أسبوع واضح (مثل الاثنين القادم) لنكمل الحجز.",
+            ctx_patch={},
+            version=ctx.version,
+        )
+    date = parsed_date
 
     gender = ctx.gender or "male"
+    # Safety 3: ensure selected services belong to the current gender's catalog
+    allowed_pm = {s.get("pm_si") for s in get_services_by_gender(gender) if isinstance(s, dict)}
+    bad_for_gender = [pm for pm in (ctx.selected_services_pm_si or []) if pm not in allowed_pm]
+    if bad_for_gender:
+        return ToolResult(
+            public_text="الخدمة المختارة غير متاحة لهذا القسم. رجاءً اختر خدمة مناسبة للقسم المطلوب.",
+            ctx_patch={},
+            version=ctx.version,
+        )
 
     try:
         slots = await booking_tool.get_available_times(
