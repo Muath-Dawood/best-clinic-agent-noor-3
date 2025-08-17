@@ -144,7 +144,8 @@ async def test_create_booking_autoselects_single_offered_doctor(monkeypatch):
     )
     ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
     ctx.user_name = "Tester"
-    ctx.user_phone = "+970599000000"
+    ctx.user_phone = "0599000000"
+    ctx.gender = "male"
 
     async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None):
         return {"result": True, "data": {"booking_id": 999}}
