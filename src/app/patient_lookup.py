@@ -82,4 +82,18 @@ async def fetch_patient_data_from_whatsapp_id(chat_id: str) -> Optional[Dict[str
     if not (isinstance(phone, str) and phone.startswith("05") and len(phone) == 10):
         return None
 
-    return await lookup_api(phone)
+    try:
+        return await lookup_api(phone)
+    except httpx.HTTPStatusError as e:
+        # 404 → user not found in clinic DB; proceed as new customer
+        if e.response is not None and e.response.status_code == 404:
+            logger.info(
+                f"lookup_api 404 (not found) for {phone}; treating as new user"
+            )
+            return None
+        logger.error(f"lookup_api HTTP error for {phone}: {e}")
+        return None
+    except (httpx.RequestError, LookupError, ValueError) as e:
+        # Network, format or "status=false" → just proceed without DB data
+        logger.warning(f"lookup_api failed for {phone}: {e}")
+        return None
