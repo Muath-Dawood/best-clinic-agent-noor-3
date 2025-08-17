@@ -127,31 +127,34 @@ async def receive_wa(request: Request) -> Response:
     ctx.user_has_attachments = False
 
     if ctx.patient_data is None:
-        patient = await fetch_patient_data_from_whatsapp_id(sender_id)
+        try:
+            patient = await fetch_patient_data_from_whatsapp_id(sender_id)
+        except Exception as e:
+            # absolute last line of defense; never crash a webhook on lookup
+            logger.error(f"[lookup] unexpected error for {ctx.user_phone}: {e}")
+            patient = None
+
         if patient:
             details = patient.get("details") or {}
             ctx.patient_data = details
-
-            # ✅ always prefer DB name over WhatsApp display name
+            ctx.customer_type = "exists"
+            # ✅ prefer DB name over WhatsApp display name
             db_name = details.get("name")
             if isinstance(db_name, str) and db_name.strip():
                 ctx.user_name = db_name.strip()
             elif not ctx.user_name:
-                # fallback to WhatsApp sender display name if we still don't have one
                 wa_display_name = body.get("senderData", {}).get("senderName")
                 if isinstance(wa_display_name, str) and wa_display_name.strip():
                     ctx.user_name = wa_display_name.strip()
-
-            logger.info(
-                f"[lookup] FOUND: {ctx.user_phone} → {ctx.user_name or '<no name>'}"
-            )
+            logger.info(f"[lookup] FOUND: {ctx.user_phone} → {ctx.user_name or '<no name>'}")
         else:
-            # optional: fallback to WhatsApp sender name when no DB record
+            # No DB hit: proceed as new user, keep WA name/phone if available
+            ctx.customer_type = "new"
             if not ctx.user_name:
                 wa_display_name = body.get("senderData", {}).get("senderName")
                 if isinstance(wa_display_name, str) and wa_display_name.strip():
                     ctx.user_name = wa_display_name.strip()
-            logger.info(f"[lookup] NOT FOUND: {ctx.user_phone}")
+            logger.info(f"[lookup] NOT FOUND: {ctx.user_phone} (proceed as new)")
 
     # Prefetch last summary only at the start of a brand-new session
     if is_new_session:
