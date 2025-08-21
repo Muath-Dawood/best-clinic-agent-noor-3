@@ -144,7 +144,7 @@ def _build_booking_idempotency_key(ctx) -> str:
 
 
 async def _recover_slot_conflict(ctx, patch, human_prefix=None):
-    """When the selected slot is unavailable, refresh times and reset slot-related fields."""
+    """When the selected slot (or doctor@slot) is unavailable, refresh times and reset slot-related fields, keeping date & services."""
     try:
         fresh_times = await booking_tool.get_available_times(
             ctx.appointment_date, ctx.selected_services_pm_si, ctx.effective_gender()
@@ -152,6 +152,7 @@ async def _recover_slot_conflict(ctx, patch, human_prefix=None):
     except Exception:
         fresh_times = None
 
+    # Reset slot + doctor
     patch.update(
         {
             "appointment_time": None,
@@ -163,15 +164,12 @@ async def _recover_slot_conflict(ctx, patch, human_prefix=None):
     if fresh_times is not None:
         patch.update({"available_times": fresh_times})
 
+    # Friendly message
     human = human_prefix or "عذراً، لم يعد الوقت المختار متاحاً."
     if fresh_times:
-        prev = ctx.appointment_time
         times = [t.get("time") for t in fresh_times if isinstance(t, dict)]
-        if prev in times:
-            times = [t for t in times if t != prev]
         if times:
-            sample = ", ".join(times[:10])
-            human += f" الأوقات المتاحة الأخرى: {sample}"
+            human += " الأوقات المتاحة الأخرى: " + ", ".join(times[:12])
         else:
             human += " لا توجد أوقات متاحة حالياً في هذا اليوم."
     else:
@@ -253,9 +251,24 @@ async def check_availability(
     if not parsed_date:
         lowered = (date or "").strip().lower()
         weekday_map = {
-            "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
-            "الاثنين": 0, "الإثنين": 0, "الثلاثاء": 1, "الأربعاء": 2, "الاربعاء": 2, "الخميس": 3,
-            "الجمعة": 4, "السبت": 5, "الأحد": 6, "الاحد": 6,
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+            "الاثنين": 0,
+            "الإثنين": 0,
+            "الأثنين": 0,
+            "الثلاثاء": 1,
+            "الأربعاء": 2,
+            "الاربعاء": 2,
+            "الخميس": 3,
+            "الجمعة": 4,
+            "السبت": 5,
+            "الأحد": 6,
+            "الاحد": 6,
         }
         # Fallback: convert weekday phrases like "الاثنين القادم" to next occurrence
         for name, idx in weekday_map.items():
@@ -351,10 +364,7 @@ async def suggest_employees(
         time: The time to check for available employees (HH:MM format)
     """
     ctx = wrapper.context
-    # Build a safe set of available times for user-facing alternatives/messages
-    available_times_set = {
-        t.get("time") for t in (ctx.available_times or []) if isinstance(t, dict) and t.get("time")
-    }
+    patch: dict[str, Any] = {}
 
     error = _validate_step(ctx, BookingStep.SELECT_TIME, BookingStep.SELECT_EMPLOYEE)
     if error:
@@ -372,16 +382,36 @@ async def suggest_employees(
     parsed_time = booking_tool.parse_natural_time(time)
     time = parsed_time or time
 
-    # If we're still at the time step, enforce time to be from the offered list.
-    # If we're already at the employee step (time is set), be forgiving: allow re-query for the same time.
+    if not ctx.available_times:
+        try:
+            refilled_times = await booking_tool.get_available_times(
+                ctx.appointment_date, ctx.selected_services_pm_si, ctx.effective_gender()
+            )
+            patch.update({"available_times": refilled_times})
+            available_times_set = {
+                t.get("time") for t in (refilled_times or []) if isinstance(t, dict) and t.get("time")
+            }
+        except Exception:
+            available_times_set = {
+                t.get("time") for t in (ctx.available_times or []) if isinstance(t, dict) and t.get("time")
+            }
+    else:
+        available_times_set = {
+            t.get("time") for t in (ctx.available_times or []) if isinstance(t, dict) and t.get("time")
+        }
+
     if ctx.next_booking_step == BookingStep.SELECT_TIME:
-        if not ctx.available_times:
-            return ToolResult(public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.", ctx_patch={}, version=ctx.version)
+        if not available_times_set:
+            return ToolResult(
+                public_text="عذراً، يجب فحص الأوقات المتاحة أولاً.",
+                ctx_patch=patch,
+                version=ctx.version,
+            )
         if time not in available_times_set:
             human_times = ", ".join(sorted(available_times_set))
             return ToolResult(
                 public_text=f"عذراً، الوقت {time} غير متاح. الأوقات المتاحة: {human_times}",
-                ctx_patch={},
+                ctx_patch=patch,
                 version=ctx.version,
             )
 
@@ -394,7 +424,7 @@ async def suggest_employees(
     except BookingFlowError as e:
         return ToolResult(
             public_text=f"عذراً، حدث خطأ في جلب الأطباء: {str(e)}",
-            ctx_patch={},
+            ctx_patch=patch,
             version=ctx.version,
         )
 
@@ -402,7 +432,7 @@ async def suggest_employees(
         alternatives = ", ".join(sorted(available_times_set)) if available_times_set else "—"
         return ToolResult(
             public_text=f"عذراً، لا يوجد أطباء متاحون في {ctx.appointment_date} الساعة {time}. الأوقات المتاحة الأخرى: {alternatives}",
-            ctx_patch={},
+            ctx_patch=patch,
             version=ctx.version,
         )
 
@@ -414,11 +444,7 @@ async def suggest_employees(
             disp = nm or (f"Doctor {pm}" if pm else None)
             if pm and disp:
                 norm_emps.append({"pm_si": pm, "name": nm, "display": disp})
-    # Only write appointment_time if it changed; otherwise keep context stable.
-    patch = {
-        "offered_employees": norm_emps,
-        "checkout_summary": checkout_summary,
-    }
+    patch.update({"offered_employees": norm_emps, "checkout_summary": checkout_summary})
     prefix = ""
     if ctx.appointment_time != time:
         patch["appointment_time"] = time
