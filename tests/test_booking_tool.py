@@ -29,7 +29,7 @@ async def test_create_booking_success(monkeypatch):
         time="09:00",
         employee_pm_si="emp123",
         services_pm_si=["svc1"],
-        customer_info={"name": "Ali", "phone": "0590000000"},
+        customer_pm_si="cust123",
         gender="male",
     )
 
@@ -59,7 +59,7 @@ async def test_create_booking_failure(monkeypatch):
             time="09:00",
             employee_pm_si="emp123",
             services_pm_si=["svc1"],
-            customer_info={"name": "Ali", "phone": "0590000000"},
+            customer_pm_si="cust123",
             gender="male",
         )
 

@@ -5,6 +5,7 @@ This tool manages the complete booking flow while keeping Noor's responses natur
 
 from typing import List, Dict, Optional, Tuple
 import logging
+import json
 
 from datetime import datetime, timedelta
 
@@ -292,9 +293,10 @@ class BookingTool:
         time: str,
         employee_pm_si: str,
         services_pm_si: List[str],
-        customer_info: Dict,
+        customer_pm_si: Optional[str],
         gender: str,
         idempotency_key: Optional[str] = None,
+        **extra,
     ) -> Dict:
         """Create the final booking."""
         cus_sec_pm_si = get_cus_sec_pm_si_by_gender(gender)
@@ -304,8 +306,14 @@ class BookingTool:
             "time": time,
             "employee_pm_si": employee_pm_si,
             "services_pm_si[]": services_pm_si,
-            **customer_info,
         }
+        if customer_pm_si:
+            data["customer_pm_si"] = customer_pm_si
+        note = extra.pop("note", None)
+        if note is not None:
+            data["note"] = json.dumps(note, ensure_ascii=False)
+        if extra:
+            data.update(extra)
 
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         result = await self._make_api_call(

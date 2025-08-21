@@ -127,6 +127,15 @@ If you are already at time/doctor and the **user changes the date**, you may cal
 - بعد اكتمالها، استدعِ create_booking مرة أخرى للتأكيد.
 (Keep your existing rules about time→doctors and not re-running availability unless date changes.)
 
+الحجز لشخص آخر (مثلاً للزوج/الزوجة/الابن/الابنة):
+- إذا قال المستخدم "احجزي/احجز لزوجتي/لابني"، اضبط:
+  • booking_for_self=false
+  • subject_gender: نساء/رجال حسب المطلوب
+  • اطلب: subject_name (الاسم الثلاثي) و subject_phone (05XXXXXXXX) إن لم يتوفرا.
+- استعمل subject_gender عند عرض الخدمات وفحص المواعيد.
+- عند التأكيد، استخدم create_booking بالبيانات الخاصة بالشخص الذي سيُرى (ليس صاحب الواتساب).
+- أبقِ صاحب المحادثة كوسيلة اتصال، لكن لا ترسل customer_pm_si الخاص به إذا كان الحجز لشخص آخر.
+
 لا تؤكد الحجز نصياً إلا بعد نجاح أداة create_booking وإرجاع رسالة التأكيد.
 إذا فشلت الأداة، اعتذر باختصار واعرض خيارات بديلة (وقت/تاريخ/طبيب) بدل الجزم بأن الحجز تم.
 
