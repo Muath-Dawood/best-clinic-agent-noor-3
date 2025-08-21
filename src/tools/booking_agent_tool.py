@@ -430,14 +430,40 @@ async def create_booking(
                 ctx_patch={},
                 version=ctx.version,
             )
+    patch: dict[str, Any] = {}
     offered = ctx.offered_employees or []
     if not any(isinstance(e, dict) and e.get("pm_si") == target_emp for e in offered):
-        return ToolResult(
-            public_text="الطبيب المختار غير موجود ضمن الأطباء المتاحين لهذا الوقت. اختر من القائمة أو جرّب وقتًا آخر.",
-            ctx_patch={},
-            version=ctx.version,
-        )
-    patch: dict[str, Any] = {}
+        # Try to refresh for this slot; lists may have changed or normalization differed.
+        try:
+            current_emps, _ = await booking_tool.get_available_employees(
+                ctx.appointment_date,
+                ctx.appointment_time,
+                ctx.selected_services_pm_si,
+                ctx.effective_gender(),
+            )
+            norm = [
+                {
+                    "pm_si": (e.get("pm_si") or e.get("id") or e.get("token")),
+                    "name": (e.get("name") or e.get("display") or e.get("title")),
+                    "display": (e.get("name") or e.get("display") or e.get("title")),
+                }
+                for e in current_emps or []
+                if (e.get("pm_si") or e.get("id") or e.get("token"))
+                and (e.get("name") or e.get("display") or e.get("title"))
+            ]
+            # Update the offered list so the user sees the fresh names
+            patch.update({"offered_employees": norm})
+            if not any(e["pm_si"] == target_emp for e in norm):
+                human = (
+                    "الطبيب المختار غير موجود لهذا الوقت. الأطباء المتاحون الآن:\n"
+                    + "\n".join(f"• {e['display']}" for e in norm)
+                    if norm
+                    else "عذراً، لا يوجد أطباء متاحون لهذا الوقت. اختر وقتاً آخر."
+                )
+                return ToolResult(public_text=human, ctx_patch=patch, version=ctx.version)
+        except BookingFlowError:
+            # Fall through; the later slot re-check will propose alternatives if needed.
+            pass
 
     # ---- New/subject guard: require minimal identity for the *subject* being seen ----
     subj_name = (ctx.user_name if ctx.booking_for_self else ctx.subject_name) or ""
@@ -799,18 +825,18 @@ async def update_booking_context(
                 ctx_patch={},
                 version=ctx.version,
             )
-        # proceed to map employee_name → employee_pm_si using offered_employees only
-        name = updates_dict["employee_name"]
-        emps = ctx.offered_employees or []
-        by_name = {e.get("name"): e for e in emps if isinstance(e, dict)}
-        chosen = by_name.get(name)
-        if not chosen:
+        # Let the unified normalizer resolve the name → pm_si
+        pm_si, resolved_name, err = _coerce_employee_to_pm_si(
+            ctx, None, updates_dict.get("employee_name")
+        )
+        if not pm_si:
             return ToolResult(
-                public_text="عذراً، لم أجد هذا الاسم ضمن الأطباء المعروضين. الرجاء اختيار اسم من القائمة المعروضة.",
+                public_text=(err or "عذراً، لم أجد هذا الاسم ضمن الأطباء المعروضين."),
                 ctx_patch={},
                 version=ctx.version,
             )
-        updates_dict["employee_pm_si"] = chosen.get("pm_si")
+        updates_dict["employee_pm_si"] = pm_si
+        updates_dict["employee_name"] = resolved_name
 
     if "employee_pm_si" in updates_dict or "employee_name" in updates_dict:
         pm_si, name, err = _coerce_employee_to_pm_si(

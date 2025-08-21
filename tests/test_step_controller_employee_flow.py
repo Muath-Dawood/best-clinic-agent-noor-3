@@ -92,3 +92,23 @@ async def test_available_times_not_cleared_on_time_change():
 
     # available_times should still be present
     assert ctx.available_times and {"time": "12:00"} in ctx.available_times
+
+
+@pytest.mark.asyncio
+async def test_employee_name_normalization():
+    """Employee names with minor spelling variants should resolve correctly."""
+
+    ctx = BookingContext(
+        selected_services_pm_si=[CANONICAL_SERVICE_TOKEN],
+        appointment_date="2025-08-26",
+        appointment_time="12:00",
+        offered_employees=[{"pm_si": "emp-1", "name": "الدكتورة هناء"}],
+    )
+    wrapper = W(ctx)
+
+    res = await update_booking_context.on_invoke_tool(
+        wrapper, json.dumps({"updates": {"employee_name": "الدكتوره هناء"}})
+    )
+
+    assert res.ctx_patch.get("employee_pm_si") == "emp-1"
+    assert res.ctx_patch.get("employee_name") == "الدكتورة هناء"

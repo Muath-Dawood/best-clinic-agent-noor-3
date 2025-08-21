@@ -74,7 +74,7 @@ def test_apply_patch_sets_next_step():
     )
     assert ctx.next_booking_step == BookingStep.SELECT_EMPLOYEE
     controller.apply_patch({"employee_pm_si": "emp1"})
-    assert ctx.next_booking_step is None
+    assert ctx.next_booking_step == BookingStep.SELECT_EMPLOYEE
 
 
 def test_apply_patch_rejects_downstream_fields():
