@@ -702,7 +702,9 @@ async def update_booking_context(
 
     if "selected_services_pm_si" in updates_dict:
         raw_ids = updates_dict.get("selected_services_pm_si") or []
-        pm_si_list, matched, unknown = coerce_service_identifiers_to_pm_si(raw_ids)
+        pm_si_list, matched, unknown = coerce_service_identifiers_to_pm_si(
+            raw_ids, prefer_gender=ctx.gender
+        )
         if unknown:
             messages.append("تنبيه: تم تجاهل خدمات غير معروفة: " + ", ".join(unknown))
         updates_dict["selected_services_pm_si"] = pm_si_list

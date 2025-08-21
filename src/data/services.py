@@ -5,6 +5,7 @@ This eliminates the need to call the categories API during booking flow.
 
 from typing import Optional
 from typing import List, Tuple
+import re
 
 from src.app.context_models import BookingContext
 
@@ -115,14 +116,21 @@ def list_all_services() -> list:
     return MEN_SERVICES + WOMEN_SERVICES
 
 
-def coerce_service_identifiers_to_pm_si(identifiers: List[str]) -> Tuple[List[str], list, List[str]]:
+def coerce_service_identifiers_to_pm_si(
+    identifiers: List[str],
+    prefer_gender: Optional[str] = None,
+) -> Tuple[List[str], list, List[str]]:
+    """Map human-friendly service identifiers to canonical ``pm_si`` tokens.
+
+    Parameters
+    ----------
+    identifiers:
+        Raw service identifiers such as titles, bullet lines, or ``pm_si`` tokens.
+    prefer_gender:
+        Optional gender hint (``male``/``female`` or Arabic equivalents) to bias
+        lookup order toward the corresponding catalog.
     """
-    Accept a mixed list of pm_si tokens OR human titles/bullets and
-    return:
-      - pm_si_list: canonical pm_si tokens
-      - matched_services: list of full service dicts (parallel)
-      - unknown: any identifiers we couldn't map
-    """
+
     all_services = list_all_services()
     pm_si_list: List[str] = []
     matched: list = []
@@ -140,44 +148,71 @@ def coerce_service_identifiers_to_pm_si(identifiers: List[str]) -> Tuple[List[st
         "استشارة نسائية": "استشارة طبية - قسم النسائية",
     }
 
+    def catalogs_by_gender() -> List[list]:
+        if (prefer_gender or "").lower() in ["female", "نساء", "أنثى", "women"]:
+            return [WOMEN_SERVICES, MEN_SERVICES]
+        return [MEN_SERVICES, WOMEN_SERVICES]
+
+    def try_match_one(s: str) -> dict | None:
+        """Attempt to resolve a single identifier to a service dict."""
+        # 1) exact pm_si
+        svc = next((x for x in all_services if x["pm_si"] == s), None)
+        if svc:
+            return svc
+
+        # Normalize via synonyms on full string first
+        s_norm = WOMEN_SYNONYMS.get(s, s)
+
+        # 2) exact title match (gender-aware search order)
+        for catalog in catalogs_by_gender():
+            svc = next(
+                (x for x in catalog if x["title"] == s_norm or x.get("title_en") == s_norm),
+                None,
+            )
+            if svc:
+                return svc
+
+        # 3) strip bullet + trailing price if present
+        m = re.match(r"^\s*•?\s*(?P<title>.+?)\s+-\s+\d", s_norm)
+        core = m.group("title").strip() if m else s_norm
+
+        # Apply synonyms again on the core
+        core = WOMEN_SYNONYMS.get(core, core)
+
+        # 4) exact core match (gender-aware)
+        for catalog in catalogs_by_gender():
+            svc = next(
+                (x for x in catalog if x["title"] == core or x.get("title_en") == core),
+                None,
+            )
+            if svc:
+                return svc
+
+        # 5) contains match (gender-aware)
+        for catalog in catalogs_by_gender():
+            svc = next(
+                (
+                    x
+                    for x in catalog
+                    if core in x["title"]
+                    or (x.get("title_en") and core in x["title_en"])
+                ),
+                None,
+            )
+            if svc:
+                return svc
+
+        return None
+
     for raw in identifiers or []:
         if not isinstance(raw, str) or not raw.strip():
             unknown.append(str(raw))
             continue
 
-    # Trim and normalize string
         s = str(raw).strip()
-        # 1) already a pm_si?
-        svc = next((x for x in all_services if x['pm_si'] == s), None)
+        svc = try_match_one(s)
         if svc:
-            pm_si_list.append(svc['pm_si'])
-            matched.append(svc)
-            continue
-
-        # 2) strip bullet formatting
-        core = s
-        if ' - ' in core:
-            core = core.split(' - ', 1)[0].strip()
-        if core.startswith('•'):
-            core = core.lstrip('•').strip()
-
-        # 2.5) normalize known synonyms (women’s titles)
-        core = WOMEN_SYNONYMS.get(core, core)
-
-        # 3) try exact or contains match on title / title_en
-        svc = next(
-            (
-                x
-                for x in all_services
-                if x['title'] == core
-                or (x.get('title_en') and x['title_en'] == core)
-                or core in x['title']
-                or (x.get('title_en') and core in x['title_en'])
-            ),
-            None,
-        )
-        if svc:
-            pm_si_list.append(svc['pm_si'])
+            pm_si_list.append(svc["pm_si"])
             matched.append(svc)
         else:
             unknown.append(s)
