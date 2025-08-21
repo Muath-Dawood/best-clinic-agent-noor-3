@@ -143,6 +143,43 @@ def _build_booking_idempotency_key(ctx) -> str:
     ).hexdigest()
 
 
+async def _recover_slot_conflict(ctx, patch, human_prefix=None):
+    """When the selected slot is unavailable, refresh times and reset slot-related fields."""
+    try:
+        fresh_times = await booking_tool.get_available_times(
+            ctx.appointment_date, ctx.selected_services_pm_si, ctx.effective_gender()
+        )
+    except Exception:
+        fresh_times = None
+
+    patch.update(
+        {
+            "appointment_time": None,
+            "offered_employees": None,
+            "employee_pm_si": None,
+            "employee_name": None,
+        }
+    )
+    if fresh_times is not None:
+        patch.update({"available_times": fresh_times})
+
+    human = human_prefix or "عذراً، لم يعد الوقت المختار متاحاً."
+    if fresh_times:
+        prev = ctx.appointment_time
+        times = [t.get("time") for t in fresh_times if isinstance(t, dict)]
+        if prev in times:
+            times = [t for t in times if t != prev]
+        if times:
+            sample = ", ".join(times[:10])
+            human += f" الأوقات المتاحة الأخرى: {sample}"
+        else:
+            human += " لا توجد أوقات متاحة حالياً في هذا اليوم."
+    else:
+        human += " تعذّر تحديث الأوقات حالياً."
+
+    return ToolResult(public_text=human, ctx_patch=patch, version=ctx.version)
+
+
 @function_tool
 async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolResult:
     """Show available services based on the user's gender preference."""
@@ -433,9 +470,9 @@ async def create_booking(
     patch: dict[str, Any] = {}
     offered = ctx.offered_employees or []
     if not any(isinstance(e, dict) and e.get("pm_si") == target_emp for e in offered):
-        # Try to refresh for this slot; lists may have changed or normalization differed.
+        # Try to refresh employees once for this slot
         try:
-            current_emps, _ = await booking_tool.get_available_employees(
+            emps, _ = await booking_tool.get_available_employees(
                 ctx.appointment_date,
                 ctx.appointment_time,
                 ctx.selected_services_pm_si,
@@ -447,23 +484,22 @@ async def create_booking(
                     "name": (e.get("name") or e.get("display") or e.get("title")),
                     "display": (e.get("name") or e.get("display") or e.get("title")),
                 }
-                for e in current_emps or []
+                for e in emps or []
                 if (e.get("pm_si") or e.get("id") or e.get("token"))
                 and (e.get("name") or e.get("display") or e.get("title"))
             ]
-            # Update the offered list so the user sees the fresh names
             patch.update({"offered_employees": norm})
-            if not any(e["pm_si"] == target_emp for e in norm):
-                human = (
-                    "الطبيب المختار غير موجود لهذا الوقت. الأطباء المتاحون الآن:\n"
-                    + "\n".join(f"• {e['display']}" for e in norm)
-                    if norm
-                    else "عذراً، لا يوجد أطباء متاحون لهذا الوقت. اختر وقتاً آخر."
+            if any((x.get("pm_si") or x.get("id")) == target_emp for x in (emps or [])):
+                pass
+            else:
+                return await _recover_slot_conflict(
+                    ctx, patch, "الطبيب المختار غير متاح لهذا الوقت."
                 )
-                return ToolResult(public_text=human, ctx_patch=patch, version=ctx.version)
-        except BookingFlowError:
-            # Fall through; the later slot re-check will propose alternatives if needed.
-            pass
+        except Exception:
+            # If refresh fails, fall back to recovering to time selection
+            return await _recover_slot_conflict(
+                ctx, patch, "تعذّر التحقق من توفر الطبيب لهذا الوقت."
+            )
 
     # ---- New/subject guard: require minimal identity for the *subject* being seen ----
     subj_name = (ctx.user_name if ctx.booking_for_self else ctx.subject_name) or ""
@@ -495,25 +531,8 @@ async def create_booking(
             subj_gender,
         )
         if not any(emp.get("pm_si") == target_emp for emp in current_emps):
-            slots = await booking_tool.get_available_times(
-                ctx.appointment_date, ctx.selected_services_pm_si, subj_gender
-            )
-            human_times = [s.get("time") for s in slots if s.get("time")]
-            patch.update(
-                {
-                    "appointment_time": None,
-                    "offered_employees": None,
-                    "checkout_summary": None,
-                    "available_times": slots,
-                }
-            )
-            return ToolResult(
-                public_text=
-                "عذراً، تم حجز هذا الوقت بالفعل. الأوقات المتاحة الأخرى: "
-                + ", ".join(human_times),
-                ctx_patch=patch,
-                private_data={"available_times": slots},
-                version=ctx.version,
+            return await _recover_slot_conflict(
+                ctx, patch, "عذراً، تم حجز هذا الوقت بالفعل."
             )
     except BookingFlowError:
         pass
@@ -547,6 +566,16 @@ async def create_booking(
             **extra_kwargs,
         )
 
+        # Backend may return conflict/unavailable; handle gracefully
+        if (
+            not result
+            or result.get("result") is False
+            or str(result.get("error_code")) in {"409", "CONFLICT", "SLOT_UNAVAILABLE"}
+        ):
+            return await _recover_slot_conflict(
+                ctx, patch, "عذراً، لم يعد هذا الوقت متاحاً."
+            )
+
         if result.get("result"):
             patch.update(
                 {
@@ -578,34 +607,10 @@ async def create_booking(
             version=ctx.version,
         )
 
-    except BookingFlowError as e:
-        try:
-            slots = await booking_tool.get_available_times(
-                ctx.appointment_date, ctx.selected_services_pm_si, subj_gender
-            )
-            human_times = [s.get("time") for s in slots if s.get("time")]
-            patch.update(
-                {
-                    "appointment_time": None,
-                    "offered_employees": None,
-                    "checkout_summary": None,
-                    "available_times": slots,
-                }
-            )
-            return ToolResult(
-                public_text=
-                f"عذراً، لم يعد الوقت {ctx.appointment_time} متاحاً. الأوقات المتاحة الأخرى: "
-                + ", ".join(human_times),
-                ctx_patch=patch,
-                private_data={"available_times": slots},
-                version=ctx.version,
-            )
-        except BookingFlowError:
-            return ToolResult(
-                public_text=f"عذراً، حدث خطأ في إنشاء الحجز: {str(e)}",
-                ctx_patch=patch,
-                version=ctx.version,
-            )
+    except BookingFlowError:
+        return await _recover_slot_conflict(
+            ctx, patch, "عذراً، لم يعد هذا الوقت متاحاً."
+        )
 
 
 @function_tool
