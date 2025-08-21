@@ -375,7 +375,9 @@ async def create_booking(
     """Create the final booking with all selected details."""
     ctx = wrapper.context
 
-    error = _validate_step(ctx, BookingStep.SELECT_EMPLOYEE)
+    # NOTE: StepController returns None once employee is set (flow complete).
+    # Allow create_booking when next_booking_step is SELECT_EMPLOYEE or None.
+    error = _validate_step(ctx, BookingStep.SELECT_EMPLOYEE, None)
     if error:
         return ToolResult(public_text=error, ctx_patch={}, version=ctx.version)
 
