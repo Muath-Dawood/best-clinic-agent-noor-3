@@ -4,8 +4,10 @@ Uses the correct @function_tool pattern from Agents SDK.
 """
 
 from typing import List, Dict, Optional, Literal, Any
+from types import SimpleNamespace
 import json
 import re
+import hashlib
 from datetime import datetime, timedelta
 from pydantic import BaseModel, ConfigDict
 from agents import function_tool, RunContextWrapper
@@ -99,6 +101,19 @@ def _coerce_employee_to_pm_si(
             if cand and (needle == cand or needle in cand or cand in needle):
                 return e.get("pm_si"), e.get("name") or e.get("display") or employee_name, None
     return None, None, "الطبيب غير معروف من القائمة الحالية. اختر من الأسماء المعروضة."
+
+
+def _build_booking_idempotency_key(ctx) -> str:
+    raw = {
+        "chat": getattr(ctx, "chat_id", None),
+        "date": ctx.appointment_date,
+        "time": ctx.appointment_time,
+        "emp": ctx.employee_pm_si,
+        "svcs": sorted(ctx.selected_services_pm_si or []),
+    }
+    return hashlib.sha256(
+        json.dumps(raw, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 @function_tool
@@ -471,11 +486,14 @@ async def create_booking(
             "customer_gender": normalize_gender(ctx.customer_gender or gender),
         }
 
-    chat_id = getattr(ctx, "chat_id", "")
-    services_key = ",".join(sorted(ctx.selected_services_pm_si or []))
-    idempotency_key = (
-        f"{chat_id}-{ctx.appointment_date}-{ctx.appointment_time}-{target_emp}-{services_key}"
+    temp_ctx = SimpleNamespace(
+        chat_id=getattr(ctx, "chat_id", None),
+        appointment_date=ctx.appointment_date,
+        appointment_time=ctx.appointment_time,
+        employee_pm_si=target_emp,
+        selected_services_pm_si=ctx.selected_services_pm_si,
     )
+    idempotency_key = _build_booking_idempotency_key(temp_ctx)
 
     try:
         result = await booking_tool.create_booking(
@@ -745,7 +763,6 @@ async def update_booking_context(
         return ToolResult(public_text=text, ctx_patch={}, version=ctx.version)
 
     controller = StepController(ctx)
-    start_version = ctx.version
     msg_map = {
         BookingStep.SELECT_SERVICE: (
             "تم تحديث الخدمات. تم مسح الأوقات المتاحة، الأطباء المقترحين، وملخص الحجز. "
@@ -767,7 +784,8 @@ async def update_booking_context(
                     step, expected_version=ctx.version
                 )
                 messages.append(msg_map[step])
-                controller.revert_to(start_version)
+                for name in StepController._DOWNSTREAM_FIELDS.get(step, [])[1:]:
+                    updates_dict[name] = getattr(ctx, name)
 
     text = "تم تحديث الحقول: " + ", ".join(updates_dict.keys())
     if messages:
