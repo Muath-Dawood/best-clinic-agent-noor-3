@@ -99,3 +99,38 @@ async def test_create_booking_blocks_when_missing_new_customer_info(monkeypatch)
     res = await create_booking.on_invoke_tool(W(ctx), json.dumps({}))
     assert "قبل تأكيد الحجز" in res.public_text
     assert called["flag"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_booking_all_set_and_next_none(monkeypatch):
+    ctx = BookingContext(
+        selected_services_pm_si=["svc1"],
+        appointment_date="2025-08-26",
+        appointment_time="12:00",
+        offered_employees=[{"pm_si": "emp-1", "name": "دكتور مؤمن"}],
+        employee_pm_si="emp-1",
+        employee_name="دكتور مؤمن",
+        user_name="Tester",
+        user_phone="0590000000",
+        gender="male",
+    )
+    # Simulate flow complete
+    StepController(ctx).apply_patch({})
+    assert ctx.next_booking_step is None  # flow "done" after doctor chosen
+
+    async def fake_emps(date, time, services, gender):
+        return ([{"pm_si": "emp-1", "name": "دكتور مؤمن"}], {"total_price": 50})
+
+    async def fake_times(date, services, gender):
+        return [{"time": "12:00"}]
+
+    async def fake_create(date, time, emp, services, customer, gender, idempotency_key=None):
+        return {"result": True, "data": {"booking_id": "abc123"}}
+
+    monkeypatch.setattr(booking_tool_module.booking_tool, "get_available_employees", fake_emps)
+    monkeypatch.setattr(booking_tool_module.booking_tool, "get_available_times", fake_times)
+    monkeypatch.setattr(booking_tool_module.booking_tool, "create_booking", fake_create)
+
+    wrapper = type("W", (), {"context": ctx})()
+    result = await create_booking.on_invoke_tool(wrapper, json.dumps({}))
+    assert "تم تأكيد الحجز" in result.public_text or result.ctx_patch.get("booking_confirmed") is True
