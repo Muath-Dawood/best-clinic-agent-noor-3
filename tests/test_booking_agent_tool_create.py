@@ -29,14 +29,14 @@ async def test_create_booking_returns_human_message(monkeypatch):
     StepController(ctx).apply_patch({})
     ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
 
-    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None):
+    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None, **kw):
         return {"result": True, "data": {"booking_id": 123}}
 
     monkeypatch.setattr(booking_tool_module.booking_tool, "create_booking", ok_create)
 
     res = await create_booking.on_invoke_tool(W(ctx), json.dumps({}))
     assert isinstance(res.public_text, str) and not res.public_text.strip().startswith("{")
-    assert "تم تأكيد حجزك" in res.public_text
+    assert "تم تأكيد حجز" in res.public_text
     assert "2025-08-20" in res.public_text
     assert "10:00" in res.public_text
     assert "دكتور مؤمن" in res.public_text
@@ -59,14 +59,14 @@ async def test_create_booking_no_available_times_single_doctor_no_employee_patch
     )
     ctx.next_booking_step = BookingStep.SELECT_EMPLOYEE
 
-    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None):
+    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None, **kw):
         assert emp == "emp1"  # auto-selected
         return {"result": True, "data": {"booking_id": 777}}
 
     monkeypatch.setattr(booking_tool_module.booking_tool, "create_booking", ok_create)
 
     res = await create_booking.on_invoke_tool(W(ctx), json.dumps({}))
-    assert "تم تأكيد حجزك" in res.public_text
+    assert "تم تأكيد حجز" in res.public_text
     # Must not include risky employee_* patches
     assert "employee_pm_si" not in res.ctx_patch
     assert "employee_name" not in res.ctx_patch
@@ -124,7 +124,7 @@ async def test_create_booking_all_set_and_next_none(monkeypatch):
     async def fake_times(date, services, gender):
         return [{"time": "12:00"}]
 
-    async def fake_create(date, time, emp, services, customer, gender, idempotency_key=None):
+    async def fake_create(date, time, emp, services, customer, gender, idempotency_key=None, **kw):
         return {"result": True, "data": {"booking_id": "abc123"}}
 
     monkeypatch.setattr(booking_tool_module.booking_tool, "get_available_employees", fake_emps)

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -45,6 +45,7 @@ class BookingContext:
 
     # patient record & history (if found)
     patient_data: Optional[Dict] = None
+    customer_pm_si: Optional[str] = None  # existing patient pm_si token
     previous_summaries: Optional[List[str]] = None
     user_has_attachments: bool = False
 
@@ -75,9 +76,20 @@ class BookingContext:
     customer_type: Optional[str] = None  # 'new' or 'exists'
     customer_gender: Optional[str] = None  # for new patients
 
+    # --- booking subject (person being seen) ---
+    subject_name: Optional[str] = None
+    subject_phone: Optional[str] = None
+    subject_gender: Optional[str] = None
+    subject_relation: Optional[str] = None
+    booking_for_self: bool = True
+
     # flow guidance
     next_booking_step: Optional[BookingStep] = None  # what Noor should ask next
     pending_questions: Optional[List[str]] = None  # questions Noor needs to ask
 
     # versioning
     version: int = 0  # incremented on each context update
+
+    def effective_gender(self) -> str:
+        """Gender that should drive service catalog & availability."""
+        return (self.subject_gender or self.gender or "male")

@@ -4,7 +4,6 @@ Uses the correct @function_tool pattern from Agents SDK.
 """
 
 from typing import List, Dict, Optional, Literal, Any
-from types import SimpleNamespace
 import json
 import re
 import hashlib
@@ -45,6 +44,12 @@ class BookingContextUpdate(BaseModel):
     # allow persisting basic customer info for new users
     user_name: Optional[str] = None
     user_phone: Optional[str] = None
+    # subject fields (for booking for someone else)
+    subject_name: Optional[str] = None
+    subject_phone: Optional[str] = None
+    subject_gender: Optional[str] = None
+    subject_relation: Optional[str] = None
+    booking_for_self: Optional[bool] = None
     next_booking_step: Optional[BookingStep] = None  # ignored
 
 
@@ -106,10 +111,32 @@ def _coerce_employee_to_pm_si(
 def _build_booking_idempotency_key(ctx) -> str:
     raw = {
         "chat": getattr(ctx, "chat_id", None),
-        "date": ctx.appointment_date,
-        "time": ctx.appointment_time,
-        "emp": ctx.employee_pm_si,
-        "svcs": sorted(ctx.selected_services_pm_si or []),
+        "date": getattr(ctx, "appointment_date", None),
+        "time": getattr(ctx, "appointment_time", None),
+        "emp": getattr(ctx, "employee_pm_si", None),
+        "svcs": sorted(getattr(ctx, "selected_services_pm_si", []) or []),
+        "subject": {
+            "self": bool(getattr(ctx, "booking_for_self", True)),
+            "name": (
+                getattr(ctx, "subject_name", None)
+                if not getattr(ctx, "booking_for_self", True)
+                else getattr(ctx, "user_name", None)
+            ),
+            "phone": (
+                getattr(ctx, "subject_phone", None)
+                if not getattr(ctx, "booking_for_self", True)
+                else getattr(ctx, "user_phone", None)
+            ),
+            "gender": (
+                ctx.effective_gender()
+                if hasattr(ctx, "effective_gender")
+                else (
+                    getattr(ctx, "subject_gender", None)
+                    or getattr(ctx, "gender", None)
+                    or "male"
+                )
+            ),
+        },
     }
     return hashlib.sha256(
         json.dumps(raw, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -124,7 +151,7 @@ async def suggest_services(wrapper: RunContextWrapper[BookingContext]) -> ToolRe
     # at/before service selection to avoid wiping downstream progress.
     at_or_before_service = ctx.next_booking_step in (None, BookingStep.SELECT_SERVICE)
 
-    gender = ctx.gender or "male"
+    gender = ctx.effective_gender()
 
     try:
         services = get_services_by_gender(gender)
@@ -215,7 +242,7 @@ async def check_availability(
         )
     date = parsed_date
 
-    gender = ctx.gender or "male"
+    gender = ctx.effective_gender()
     # Safety 3: ensure selected services belong to the current gender's catalog
     allowed_pm = {s.get("pm_si") for s in get_services_by_gender(gender) if isinstance(s, dict)}
     bad_for_gender = [pm for pm in (ctx.selected_services_pm_si or []) if pm not in allowed_pm]
@@ -321,7 +348,7 @@ async def suggest_employees(
                 version=ctx.version,
             )
 
-    gender = ctx.gender or "male"
+    gender = ctx.effective_gender()
 
     try:
         employees, checkout_summary = await booking_tool.get_available_employees(
@@ -412,17 +439,16 @@ async def create_booking(
         )
     patch: dict[str, Any] = {}
 
-    # ---- New customer guard: require minimal customer info ----
+    # ---- New/subject guard: require minimal identity for the *subject* being seen ----
+    subj_name = (ctx.user_name if ctx.booking_for_self else ctx.subject_name) or ""
+    subj_phone = (ctx.user_phone if ctx.booking_for_self else ctx.subject_phone) or ""
+    subj_gender = ctx.effective_gender()
+    name_ok = bool(subj_name.strip())
+    phone_ok = bool(isinstance(subj_phone, str) and subj_phone.startswith("05") and len(subj_phone) == 10)
+    gender_ok = subj_gender in ("male", "female")
+
     missing: list[str] = []
-    name_ok = bool(getattr(ctx, "user_name", None) and ctx.user_name.strip())
-    phone_ok = bool(
-        getattr(ctx, "user_phone", None)
-        and isinstance(ctx.user_phone, str)
-        and ctx.user_phone.startswith("05")
-        and len(ctx.user_phone) == 10
-    )
-    gender_ok = ctx.gender in ("male", "female")
-    if not getattr(ctx, "patient_data", None):
+    if not (ctx.booking_for_self and getattr(ctx, "customer_pm_si", None)):
         if not name_ok:
             missing.append("الاسم")
         if not phone_ok:
@@ -431,12 +457,8 @@ async def create_booking(
             missing.append("القسم (رجال/نساء)")
     if missing:
         msg = "قبل تأكيد الحجز، نحتاج: " + "، ".join(missing) + ".\n"
-        msg += (
-            "أرسل لي الاسم الثلاثي ورقم الهاتف بصيغة 05XXXXXXXX، واختر القسم (رجال/نساء) إن لم يكن محدداً."
-        )
+        msg += "أرسل لي الاسم الثلاثي ورقم الهاتف بصيغة 05XXXXXXXX، واختر القسم (رجال/نساء) إن لم يكن محدداً."
         return ToolResult(public_text=msg, ctx_patch={}, version=ctx.version)
-
-    gender = ctx.gender or "male"
 
     # Re-check that the chosen slot is still available
     try:
@@ -444,11 +466,11 @@ async def create_booking(
             ctx.appointment_date,
             ctx.appointment_time,
             ctx.selected_services_pm_si,
-            gender,
+            subj_gender,
         )
         if not any(emp.get("pm_si") == target_emp for emp in current_emps):
             slots = await booking_tool.get_available_times(
-                ctx.appointment_date, ctx.selected_services_pm_si, gender
+                ctx.appointment_date, ctx.selected_services_pm_si, subj_gender
             )
             human_times = [s.get("time") for s in slots if s.get("time")]
             patch.update(
@@ -468,34 +490,24 @@ async def create_booking(
                 version=ctx.version,
             )
     except BookingFlowError:
-        # If availability check fails, proceed to booking attempt
         pass
 
-    if ctx.patient_data:
-        customer_info = {"customer_type": "exists", "customer_search": ctx.user_phone}
-    else:
-        if not ctx.user_name or not ctx.user_phone:
-            return ToolResult(
-                public_text="عذراً، نحتاج معلوماتك الشخصية لإكمال الحجز. ما اسمك ورقم هاتفك؟",
-                ctx_patch=patch,
-                version=ctx.version,
-            )
-
-        customer_info = {
-            "customer_type": "new",
-            "customer_name": ctx.user_name,
-            "customer_phone": ctx.user_phone,
-            "customer_gender": normalize_gender(ctx.customer_gender or gender),
-        }
-
-    temp_ctx = SimpleNamespace(
-        chat_id=getattr(ctx, "chat_id", None),
-        appointment_date=ctx.appointment_date,
-        appointment_time=ctx.appointment_time,
-        employee_pm_si=target_emp,
-        selected_services_pm_si=ctx.selected_services_pm_si,
-    )
-    idempotency_key = _build_booking_idempotency_key(temp_ctx)
+    subject_has_pm = bool(ctx.booking_for_self and getattr(ctx, "customer_pm_si", None))
+    customer_pm_si = ctx.customer_pm_si if subject_has_pm else None
+    extra_kwargs: dict[str, Any] = {}
+    if not subject_has_pm:
+        extra_kwargs.update(
+            {
+                "customer_name": subj_name,
+                "customer_phone": subj_phone,
+                "customer_gender": normalize_gender(subj_gender),
+                "note": {
+                    "subject_name": subj_name,
+                    "subject_phone": subj_phone,
+                    "subject_relation": ctx.subject_relation,
+                },
+            }
+        )
 
     try:
         result = await booking_tool.create_booking(
@@ -503,9 +515,10 @@ async def create_booking(
             ctx.appointment_time,
             target_emp,
             ctx.selected_services_pm_si,
-            customer_info,
-            gender,
-            idempotency_key=idempotency_key,
+            customer_pm_si,
+            subj_gender,
+            idempotency_key=_build_booking_idempotency_key(ctx),
+            **extra_kwargs,
         )
 
         if result.get("result"):
@@ -515,17 +528,16 @@ async def create_booking(
                     "booking_in_progress": False,
                 }
             )
-            # Build a friendly confirmation (Arabic-first)
             services = ctx.selected_services_data or []
             if not services and ctx.selected_services_pm_si:
-                # light fallback: show count if titles are unavailable
                 services = [{"title": f"{len(ctx.selected_services_pm_si)} خدمة"}]
             titles = [s.get("title") for s in services if isinstance(s, dict) and s.get("title")]
             services_text = "، ".join(titles) if titles else "الخدمة المختارة"
+            who = subj_name if not ctx.booking_for_self else (ctx.user_name or "المراجع")
             human = (
-                f"✅ تم تأكيد حجزك لـ {services_text} "
+                f"✅ تم تأكيد حجز {who} لـ {services_text} "
                 f"يوم {ctx.appointment_date} الساعة {ctx.appointment_time} "
-                f"مع {getattr(ctx, 'employee_name', None) or locals().get('chosen_name') or 'الطبيب المختار'}. أهلاً وسهلاً!"
+                f"مع {ctx.employee_name or locals().get('chosen_name') or 'الطبيب المختار'}. أهلاً وسهلاً!"
             )
             return ToolResult(
                 public_text=human,
@@ -533,7 +545,6 @@ async def create_booking(
                 private_data=result,
                 version=ctx.version,
             )
-        # Non-true result (should be rare—API said false earlier)
         return ToolResult(
             public_text="عذراً، لم نتمكن من تأكيد الحجز حالياً. جرب وقتاً مختلفاً أو تاريخاً آخر.",
             ctx_patch=patch,
@@ -544,7 +555,7 @@ async def create_booking(
     except BookingFlowError as e:
         try:
             slots = await booking_tool.get_available_times(
-                ctx.appointment_date, ctx.selected_services_pm_si, gender
+                ctx.appointment_date, ctx.selected_services_pm_si, subj_gender
             )
             human_times = [s.get("time") for s in slots if s.get("time")]
             patch.update(
@@ -698,12 +709,66 @@ async def update_booking_context(
             )
         updates_dict["user_phone"] = digits
 
+    # ---- subject normalization ----
+    if "booking_for_self" in updates_dict:
+        b = bool(updates_dict["booking_for_self"])
+        updates_dict["booking_for_self"] = b
+        if b:
+            updates_dict.update(
+                {
+                    "subject_name": None,
+                    "subject_phone": None,
+                    "subject_gender": None,
+                    "subject_relation": None,
+                }
+            )
+
+    if updates_dict.get("subject_name") is not None:
+        name = (updates_dict["subject_name"] or "").strip()
+        if not name or len(name) < 2:
+            return ToolResult(
+                public_text="اسم الشخص غير واضح. رجاءً أرسل الاسم الثلاثي.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        updates_dict["subject_name"] = name
+
+    if updates_dict.get("subject_phone") is not None:
+        phone = (updates_dict["subject_phone"] or "").strip()
+        d = "".join(ch for ch in phone if ch.isdigit())
+        if d.startswith("970") and len(d) == 12:
+            d = "0" + d[3:]
+        if d.startswith("972") and len(d) == 12:
+            d = "0" + d[3:]
+        if d.startswith("59") and len(d) == 9:
+            d = "0" + d
+        if not (d.startswith("05") and len(d) == 10):
+            return ToolResult(
+                public_text="رقم هاتف الشخص غير صالح. الرجاء بصيغة 05XXXXXXXX.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+        updates_dict["subject_phone"] = d
+
+    if updates_dict.get("subject_gender") is not None:
+        g = str(updates_dict["subject_gender"]).lower()
+        if g in ("male", "m", "ذكر", "رجال"):
+            updates_dict["subject_gender"] = "male"
+        elif g in ("female", "f", "أنثى", "نساء", "نسائية"):
+            updates_dict["subject_gender"] = "female"
+        else:
+            return ToolResult(
+                public_text="الرجاء اختيار القسم: رجال أو نساء.",
+                ctx_patch={},
+                version=ctx.version,
+            )
+
     messages: list[str] = []
 
     if "selected_services_pm_si" in updates_dict:
         raw_ids = updates_dict.get("selected_services_pm_si") or []
         pm_si_list, matched, unknown = coerce_service_identifiers_to_pm_si(
-            raw_ids, prefer_gender=ctx.gender
+            raw_ids, prefer_gender=ctx.effective_gender()
         )
         if unknown:
             messages.append("تنبيه: تم تجاهل خدمات غير معروفة: " + ", ".join(unknown))

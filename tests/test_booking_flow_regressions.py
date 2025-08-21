@@ -147,12 +147,12 @@ async def test_create_booking_autoselects_single_offered_doctor(monkeypatch):
     ctx.user_phone = "0599000000"
     ctx.gender = "male"
 
-    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None):
+    async def ok_create(date, time, emp, svcs, cust, gender, idempotency_key=None, **kw):
         return {"result": True, "data": {"booking_id": 999}}
     monkeypatch.setattr(booking_tool_module.booking_tool, "create_booking", ok_create)
 
     res = await create_booking.on_invoke_tool(Dummy(ctx), json.dumps({}))
-    assert "تم تأكيد حجزك" in res.public_text
+    assert "تم تأكيد حجز" in res.public_text
     # create_booking should not persist employee selection
     assert "employee_pm_si" not in res.ctx_patch
 
