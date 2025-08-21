@@ -70,7 +70,8 @@ class StepController:
             "booking_confirmed",
         ],
         BookingStep.SELECT_TIME: [
-            "available_times",
+            # keep available_times for the chosen date; changing the time only
+            # affects the employee list and downstream selections
             "appointment_time",
             "total_price",
             "employee_pm_si",
@@ -107,7 +108,6 @@ class StepController:
             "selected_services_pm_si",
             "appointment_date",
             "appointment_time",
-            "available_times",
         ],
     }
 
