@@ -160,6 +160,8 @@ class StepController:
             step = self._FIELD_TO_STEP.get(name)
             if step is None:
                 continue
+            if value is None or value is False:
+                continue
             for req in self._STEP_PREREQS.get(step, []):
                 if not combined.get(req):
                     raise ValueError(

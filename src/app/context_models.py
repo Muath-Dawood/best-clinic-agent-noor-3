@@ -1,8 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+
+def _now_iso() -> str:
+    return datetime.now(ZoneInfo("Asia/Hebron")).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
 
 
 class BookingStep(str, Enum):
@@ -33,9 +37,7 @@ class BookingContext:
     user_phone: Optional[str] = None
     user_lang: Optional[str] = None
     tz: str = "Asia/Hebron"
-    current_datetime: Optional[str] = datetime.now(ZoneInfo("Asia/Hebron")).strftime(
-        "%Y-%m-%dT%H:%M:%S%z"
-    )  # ISO format
+    current_datetime: Optional[str] = field(default_factory=_now_iso)
 
     # gender and section (determines available services)
     gender: Optional[str] = None  # 'male'/'female' or 'ذكر'/'أنثى'

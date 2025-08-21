@@ -2,9 +2,12 @@
 from __future__ import annotations
 import asyncio
 import os
-import httpx
+import time
 from fastapi import APIRouter, Request, Response, status
 from agents import SQLiteSession
+
+from src.app.utils_text import extract_text_from_wa, split_for_whatsapp_by_bytes
+from src.app.http_client import client as http_client
 
 from src.app.context_models import BookingContext
 from src.app.state_manager import get_state, touch_state
@@ -14,6 +17,10 @@ from src.my_agents.noor_agent import run_noor_turn
 from src.app.session_idle import update_last_seen, schedule_idle_watch
 from src.app.logging import get_logger
 from src.app.memory_prefetch import fetch_recent_summaries_text
+
+
+# simple in-memory dedupe: last msgId per sender
+_last_msgid: dict[str, str] = {}
 
 
 # Export a router (main.py mounts it at prefix="/webhook")
@@ -45,63 +52,76 @@ def _split_for_green_api(text: str, limit: int = GREEN_MAX_MESSAGE_LEN) -> list[
 logger = get_logger("noor.webhook")
 
 
+def _verify_signature(request: Request) -> bool:
+    return True
+
 async def _send_whatsapp(chat_id: str, text: str) -> None:
     if not (GREEN_ID and GREEN_TOKEN):
         logger.warning("Skipping WhatsApp send: WA env not configured")
         return
     retries = 3
-    async with httpx.AsyncClient(timeout=10) as client:
-        for chunk in _split_for_green_api(text):
-            backoff = 1
-            success = False
-            for attempt in range(1, retries + 1):
-                try:
-                    resp = await client.post(
-                        GREEN_URL, json={"chatId": chat_id, "message": chunk}
-                    )
-                    if 200 <= resp.status_code < 300:
-                        success = True
-                        break
-                    # Non-2xx response: log minimal diagnostics
-                    logger.error(
-                        "WhatsApp send failed: status=%s body=%s",
-                        resp.status_code,
-                        resp.text[:200],
-                    )
-                    if resp.status_code in {429} or resp.status_code >= 500:
-                        if attempt < retries:
-                            await asyncio.sleep(backoff)
-                            backoff *= 2
-                            continue
+    client = http_client
+    for chunk in _split_for_green_api(text):
+        backoff = 1
+        success = False
+        for attempt in range(1, retries + 1):
+            try:
+                resp = await client.post(GREEN_URL, json={"chatId": chat_id, "message": chunk})
+                if 200 <= resp.status_code < 300:
+                    success = True
                     break
-                except Exception:
-                    logger.exception("WhatsApp send failed on attempt %d", attempt)
+                logger.error(
+                    "WhatsApp send failed: status=%s body=%s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                if resp.status_code in {429} or resp.status_code >= 500:
                     if attempt < retries:
                         await asyncio.sleep(backoff)
                         backoff *= 2
                         continue
-                    break
-            if not success:
-                return
-
-
-def fire_and_forget_send(chat_id: str, text: str) -> None:
-    asyncio.create_task(_send_whatsapp(chat_id, text))
+                break
+            except Exception:
+                logger.exception("WhatsApp send failed on attempt %d", attempt)
+                if attempt < retries:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                break
+        if not success:
+            return
 
 
 @router.post("/wa")
-async def receive_wa(request: Request) -> Response:
+async def receive_wa(request: Request):
     try:
         body = await request.json()
     except Exception:
         return Response(status_code=status.HTTP_400_BAD_REQUEST)
 
-    # Only handle plain text messages
-    try:
-        sender_id = body["senderData"]["chatId"]  # e.g. '97259XXXXXXX@c.us'
-        text_in = body["messageData"]["textMessageData"]["textMessage"]
-    except KeyError:
-        return Response(content='{"status":"ignored"}', media_type="application/json")
+    text_in, had_attach = extract_text_from_wa(body)
+    msg_id = body.get("idMessage")
+    sender_id = body.get("senderData", {}).get("chatId")
+
+    logger.info({"event": "wa_inbound", "sender": sender_id, "msg_id": msg_id, "ts": time.time()})
+
+    if os.getenv("WA_VERIFY_SECRET"):
+        ok = _verify_signature(request)
+        if not ok:
+            logger.warning({"event": "wa_verify_failed", "sender": sender_id, "msg_id": msg_id})
+
+    if sender_id and msg_id:
+        last = _last_msgid.get(sender_id)
+        if last == msg_id:
+            return {"ok": True, "dedupe": True}
+        _last_msgid[sender_id] = msg_id
+
+    if had_attach and not text_in:
+        await _send_whatsapp(sender_id, "استقبلت ملف/صورة. رجاءً اكتب رسالتك نصّياً حتى أقدر أساعدك 🌟")
+        return {"ok": True}
+
+    if not text_in:
+        return {"status": "ignored"}
 
     # --- Load or create state (context + session) ---
     state = await get_state(sender_id)
@@ -124,7 +144,7 @@ async def receive_wa(request: Request) -> Response:
         # WhatsApp usually gives a display name in senderData.senderName
         ctx.user_name = body.get("senderData", {}).get("senderName")
 
-    ctx.user_has_attachments = False
+    ctx.user_has_attachments = had_attach
 
     if ctx.patient_data is None:
         try:
@@ -187,8 +207,9 @@ async def receive_wa(request: Request) -> Response:
         logger.exception("run_noor_turn failed")
         reply = "عذرًا، في خلل تقني بسيط الآن. جرّب بعد قليل لو تكرّمت."
 
-    # Send reply even if persistence fails
-    fire_and_forget_send(sender_id, reply)
+    # Send replies (split by bytes)
+    for chunk in split_for_whatsapp_by_bytes(reply):
+        await _send_whatsapp(sender_id, chunk)
     try:
         await touch_state(sender_id, ctx, session)
     except Exception:
@@ -198,4 +219,4 @@ async def receive_wa(request: Request) -> Response:
     await update_last_seen(sender_id)
     await schedule_idle_watch(sender_id)
 
-    return Response(content='{"status":"ok"}', media_type="application/json")
+    return {"status": "ok"}
