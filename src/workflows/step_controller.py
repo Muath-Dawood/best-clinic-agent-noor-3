@@ -148,7 +148,9 @@ class StepController:
             t.get("time") for t in self.ctx.available_times
         }:
             return BookingStep.SELECT_TIME
-        if not self.ctx.employee_pm_si:
+        # Stay at SELECT_EMPLOYEE until booking is actually confirmed so the user
+        # can change the doctor or time after a failed attempt.
+        if not self.ctx.employee_pm_si or not self.ctx.booking_confirmed:
             return BookingStep.SELECT_EMPLOYEE
         return None
 

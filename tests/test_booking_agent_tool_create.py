@@ -102,7 +102,7 @@ async def test_create_booking_blocks_when_missing_new_customer_info(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_create_booking_all_set_and_next_none(monkeypatch):
+async def test_create_booking_next_stays_select_employee_until_confirmation(monkeypatch):
     ctx = BookingContext(
         selected_services_pm_si=["svc1"],
         appointment_date="2025-08-26",
@@ -114,9 +114,9 @@ async def test_create_booking_all_set_and_next_none(monkeypatch):
         user_phone="0590000000",
         gender="male",
     )
-    # Simulate flow complete
+    # Simulate flow before confirmation; step should remain SELECT_EMPLOYEE
     StepController(ctx).apply_patch({})
-    assert ctx.next_booking_step is None  # flow "done" after doctor chosen
+    assert ctx.next_booking_step == BookingStep.SELECT_EMPLOYEE
 
     async def fake_emps(date, time, services, gender):
         return ([{"pm_si": "emp-1", "name": "دكتور مؤمن"}], {"total_price": 50})
