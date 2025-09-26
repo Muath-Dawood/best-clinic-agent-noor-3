@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     vector_store_id_kb: Optional[str] = Field(default=None, env="VECTOR_STORE_ID_KB")
+    vector_store_id_summaries: Optional[str] = Field(default=None, env="VECTOR_STORE_ID_SUMMARIES")
+
+    # Session Management
+    idle_seconds: int = Field(default=1000, env="IDLE_SECONDS")
+    prefetch_summary_count: int = Field(default=3, env="PREFETCH_SUMMARY_COUNT")
+    max_prefetch_chars: int = Field(default=8000, env="MAX_PREFETCH_CHARS")
 
     # Timezone
     timezone: str = Field(default="Asia/Hebron", env="TIMEZONE")
